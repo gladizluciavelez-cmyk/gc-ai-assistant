@@ -1,0 +1,214 @@
+// Prisma schema for the GC AI assistant.
+// Postgres is assumed (Vercel Postgres / Neon / Supabase all work).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Auth (NextAuth / Prisma adapter) ---
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+
+  // Google refresh token lives on Account (below); this flag just tracks
+  // whether the user has granted Gmail + Calendar scopes at least once.
+  googleConnected Boolean @default(false)
+
+  createdAt DateTime @default(now())
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// --- Domain model ---
+
+enum ProjectStatus {
+  BIDDING
+  AWARDED
+  PRECONSTRUCTION
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETE
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  name        String
+  client      String?
+  address     String?
+  status      ProjectStatus @default(BIDDING)
+  projectType String? // e.g. "renovation", "new build", "road work" - from bid parsing
+  startDate   DateTime?
+  targetDate  DateTime?
+  notes       String?       @db.Text
+
+  subcontractors ProjectSubcontractor[]
+  emails         EmailRecord[]
+  tasks          TaskItem[]
+  permits        Permit[]
+  bid            Bid?                   @relation(fields: [bidId], references: [id])
+  bidId          String?                @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Subcontractor {
+  id      String  @id @default(cuid())
+  name    String
+  trade   String? // e.g. "electrical", "plumbing"
+  email   String?
+  phone   String?
+
+  projects ProjectSubcontractor[]
+
+  createdAt DateTime @default(now())
+}
+
+model ProjectSubcontractor {
+  id              String        @id @default(cuid())
+  projectId       String
+  subcontractorId String
+  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  subcontractor   Subcontractor @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, subcontractorId])
+}
+
+enum PermitStatus {
+  NOT_SUBMITTED
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+model Permit {
+  id          String       @id @default(cuid())
+  projectId   String
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  status      PermitStatus @default(NOT_SUBMITTED)
+  submittedAt DateTime?
+  approvedAt  DateTime?
+  sourceEmailId String?
+  notes       String?      @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum EmailCategory {
+  SUBCONTRACTOR_UPDATE
+  PERMIT
+  BID_INVITE
+  CLIENT
+  SCHEDULING
+  OTHER
+}
+
+model EmailRecord {
+  id            String        @id @default(cuid())
+  gmailId       String        @unique
+  threadId      String?
+  from          String
+  subject       String
+  receivedAt    DateTime
+  snippet       String?       @db.Text
+  category      EmailCategory @default(OTHER)
+  summary       String?       @db.Text
+  actionItem    String?       @db.Text
+  requiresReply Boolean       @default(false)
+
+  project   Project? @relation(fields: [projectId], references: [id])
+  projectId String?
+
+  createdAt DateTime @default(now())
+}
+
+enum TaskStatus {
+  TODO
+  DONE
+  DISMISSED
+}
+
+model TaskItem {
+  id          String     @id @default(cuid())
+  title       String
+  description String?    @db.Text
+  dueDate     DateTime?
+  status      TaskStatus @default(TODO)
+  source      String? // "email" | "manual" | "bid"
+
+  project   Project? @relation(fields: [projectId], references: [id])
+  projectId String?
+
+  // Which day's generated plan this belongs to (YYYY-MM-DD), for grouping.
+  planDate String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum BidSource {
+  MIAMI_DADE
+  DEMANDSTAR
+  MANUAL
+}
+
+model Bid {
+  id              String    @id @default(cuid())
+  source          BidSource
+  externalId      String? // solicitation number / bid id from the source site
+  title           String
+  agency          String?
+  projectType     String? // classified by Claude from the listing text
+  openingDate     DateTime?
+  postedDate      DateTime?
+  preBidMeetingAt DateTime?
+  url             String?
+  rawText         String?   @db.Text
+  addedToCalendar Boolean   @default(false)
+
+  project Project?
+
+  createdAt DateTime @default(now())
+
+  @@unique([source, externalId])
+}
