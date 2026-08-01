@@ -6,10 +6,22 @@ import { SignInButton, SignOutButton } from "@/components/AuthButton";
 import { SyncControls } from "@/components/SyncControls";
 import { AssignProjectSelect } from "@/components/AssignProjectSelect";
 import { ConvertBidButton } from "@/components/ConvertBidButton";
+import { TaskCheckbox } from "@/components/TaskCheckbox";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+const EMAILS_PER_PAGE = 25;
+const EMAILS_TOTAL = 50;
+
+function gmailLink(gmailId: string) {
+  return `https://mail.google.com/mail/u/0/#all/${gmailId}`;
+}
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: { emailPage?: string };
+}) {
   const session = await getServerSession(authOptions);
 
   if (!session?.user) {
@@ -27,15 +39,20 @@ export default async function DashboardPage() {
   }
 
   const today = new Date().toISOString().slice(0, 10);
+  const emailPage = Math.min(
+    Math.max(Number(searchParams.emailPage ?? "1") || 1, 1),
+    Math.ceil(EMAILS_TOTAL / EMAILS_PER_PAGE)
+  );
 
-  const [todayTasks, recentEmails, openPermits, recentBids, projects] = await Promise.all([
+  const [todayTasks, allRecentEmails, openPermits, recentBids, projects] = await Promise.all([
     prisma.taskItem.findMany({
       where: { planDate: today, status: "TODO" },
       orderBy: { createdAt: "asc" },
+      include: { email: { select: { gmailId: true } } },
     }),
     prisma.emailRecord.findMany({
       orderBy: { receivedAt: "desc" },
-      take: 10,
+      take: EMAILS_TOTAL,
     }),
     prisma.permit.findMany({
       where: { status: { not: "APPROVED" } },
@@ -49,6 +66,12 @@ export default async function DashboardPage() {
     }),
     prisma.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
+
+  const totalEmailPages = Math.max(1, Math.ceil(allRecentEmails.length / EMAILS_PER_PAGE));
+  const recentEmails = allRecentEmails.slice(
+    (emailPage - 1) * EMAILS_PER_PAGE,
+    emailPage * EMAILS_PER_PAGE
+  );
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-10">
@@ -76,11 +99,26 @@ export default async function DashboardPage() {
           ) : (
             <ul className="space-y-2">
               {todayTasks.map((t) => (
-                <li key={t.id} className="rounded-md border border-slate-200 p-3">
-                  <p className="font-medium">{t.title}</p>
-                  {t.description && (
-                    <p className="text-sm text-slate-500">{t.description}</p>
-                  )}
+                <li
+                  key={t.id}
+                  className="flex items-start gap-3 rounded-md border border-slate-200 p-3"
+                >
+                  <TaskCheckbox taskId={t.id} />
+                  <div className="flex-1">
+                    <p className="font-medium">{t.title}</p>
+                    {t.description && (
+                      <p className="text-sm text-slate-500">{t.description}</p>
+                    )}
+                    {t.email?.gmailId && (
+                      <a
+                        href={gmailLink(t.email.gmailId)}
+                        target="_blank"
+                        className="mt-1 inline-block text-sm text-brand-600 underline"
+                      >
+                        View email
+                      </a>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -91,29 +129,54 @@ export default async function DashboardPage() {
           {recentEmails.length === 0 ? (
             <Empty text="No emails synced yet — click “Sync Gmail.”" />
           ) : (
-            <ul className="space-y-2">
-              {recentEmails.map((e) => (
-                <li key={e.id} className="rounded-md border border-slate-200 p-3">
-                  <div className="flex items-center justify-between">
-                    <p className="font-medium">{e.subject}</p>
-                    <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                      {e.category}
-                    </span>
-                  </div>
-                  <p className="text-sm text-slate-500">{e.summary}</p>
-                  {e.actionItem && (
-                    <p className="mt-1 text-sm text-brand-700">→ {e.actionItem}</p>
-                  )}
-                  <div>
-                    <AssignProjectSelect
-                      emailId={e.id}
-                      currentProjectId={e.projectId}
-                      projects={projects}
-                    />
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="space-y-2">
+                {recentEmails.map((e) => (
+                  <li key={e.id} className="rounded-md border border-slate-200 p-3">
+                    <div className="flex items-center justify-between">
+                      <a
+                        href={gmailLink(e.gmailId)}
+                        target="_blank"
+                        className="font-medium hover:underline"
+                      >
+                        {e.subject}
+                      </a>
+                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                        {e.category}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-500">{e.summary}</p>
+                    {e.actionItem && (
+                      <p className="mt-1 text-sm text-brand-700">→ {e.actionItem}</p>
+                    )}
+                    <div>
+                      <AssignProjectSelect
+                        emailId={e.id}
+                        currentProjectId={e.projectId}
+                        projects={projects}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              {totalEmailPages > 1 && (
+                <div className="mt-4 flex items-center justify-center gap-2">
+                  {Array.from({ length: totalEmailPages }, (_, i) => i + 1).map((p) => (
+                    <Link
+                      key={p}
+                      href={`/?emailPage=${p}`}
+                      className={`rounded-md px-3 py-1 text-sm ${
+                        p === emailPage
+                          ? "bg-brand-600 text-white"
+                          : "border border-slate-300 text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      {p}
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </Card>
 

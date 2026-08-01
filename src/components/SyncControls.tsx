@@ -20,7 +20,7 @@ function ActionButton({
       const res = await fetch(endpoint, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Request failed");
-      setMessage(JSON.stringify(data));
+      setMessage("Complete!");
       setStatus("done");
       router.refresh();
     } catch (err) {

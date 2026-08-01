@@ -1,3 +1,6 @@
+// Prisma schema for the GC AI assistant.
+// Postgres is assumed (Vercel Postgres / Neon / Supabase all work).
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -6,6 +9,8 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+// --- Auth (NextAuth / Prisma adapter) ---
 
 model User {
   id            String    @id @default(cuid())
@@ -16,6 +21,8 @@ model User {
   accounts      Account[]
   sessions      Session[]
 
+  // Google refresh token lives on Account (below); this flag just tracks
+  // whether the user has granted Gmail + Calendar scopes at least once.
   googleConnected Boolean @default(false)
 
   createdAt DateTime @default(now())
@@ -49,6 +56,8 @@ model Session {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+// --- Domain model ---
+
 enum ProjectStatus {
   BIDDING
   AWARDED
@@ -64,7 +73,7 @@ model Project {
   client      String?
   address     String?
   status      ProjectStatus @default(BIDDING)
-  projectType String?
+  projectType String? // e.g. "renovation", "new build", "road work" - from bid parsing
   startDate   DateTime?
   targetDate  DateTime?
   notes       String?       @db.Text
@@ -83,7 +92,7 @@ model Project {
 model Subcontractor {
   id      String  @id @default(cuid())
   name    String
-  trade   String?
+  trade   String? // e.g. "electrical", "plumbing"
   email   String?
   phone   String?
 
@@ -151,6 +160,8 @@ model EmailRecord {
   project   Project? @relation(fields: [projectId], references: [id])
   projectId String?
 
+  tasks TaskItem[]
+
   createdAt DateTime @default(now())
 }
 
@@ -166,11 +177,17 @@ model TaskItem {
   description String?    @db.Text
   dueDate     DateTime?
   status      TaskStatus @default(TODO)
-  source      String?
+  source      String? // "email" | "manual" | "bid"
 
   project   Project? @relation(fields: [projectId], references: [id])
   projectId String?
 
+  // Source email this task was generated from, if any — lets the dashboard
+  // link a task straight to the Gmail message it came from.
+  email   EmailRecord? @relation(fields: [emailId], references: [id])
+  emailId String?
+
+  // Which day's generated plan this belongs to (YYYY-MM-DD), for grouping.
   planDate String?
 
   createdAt DateTime @default(now())
@@ -186,10 +203,10 @@ enum BidSource {
 model Bid {
   id              String    @id @default(cuid())
   source          BidSource
-  externalId      String?
+  externalId      String? // solicitation number / bid id from the source site
   title           String
   agency          String?
-  projectType     String?
+  projectType     String? // classified by Claude from the listing text
   openingDate     DateTime?
   postedDate      DateTime?
   preBidMeetingAt DateTime?

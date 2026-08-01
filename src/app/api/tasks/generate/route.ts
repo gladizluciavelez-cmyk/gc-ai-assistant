@@ -10,6 +10,7 @@ interface PlanTask {
   title: string;
   description?: string;
   projectHint?: string;
+  emailId?: string | null;
 }
 
 /**
@@ -66,6 +67,7 @@ export async function POST(req: NextRequest) {
   const context = JSON.stringify(
     {
       emails: emails.map((e) => ({
+        id: e.id,
         from: e.from,
         subject: e.subject,
         category: e.category,
@@ -95,7 +97,10 @@ export async function POST(req: NextRequest) {
 on recent emails, open permits, and upcoming pre-bid meetings. Produce a short,
 prioritized list of concrete tasks for today. Skip anything already in
 "alreadyOpenTasks". Respond with ONLY a JSON array, no prose, shaped as:
-[{"title": "...", "description": "...", "projectHint": "..."}]
+[{"title": "...", "description": "...", "projectHint": "...", "emailId": "..."}]
+"emailId" should be the "id" of the specific email in the "emails" list that this
+task came from (copy it exactly), or null if the task isn't tied to one specific
+email (e.g. it came from a permit or pre-bid meeting instead).
 Keep it to at most 8 tasks, most urgent first.`,
     messages: [{ role: "user", content: context }],
   });
@@ -114,6 +119,10 @@ Keep it to at most 8 tasks, most urgent first.`,
     return NextResponse.json({ error: "Failed to generate plan" }, { status: 500 });
   }
 
+  // Only trust emailId values that actually match an email we sent Claude —
+  // guards against a hallucinated id causing a foreign key error.
+  const validEmailIds = new Set(emails.map((e) => e.id));
+
   const created = await prisma.$transaction(
     planTasks.map((t) =>
       prisma.taskItem.create({
@@ -122,6 +131,7 @@ Keep it to at most 8 tasks, most urgent first.`,
           description: t.description,
           source: "email",
           planDate: today,
+          emailId: t.emailId && validEmailIds.has(t.emailId) ? t.emailId : null,
         },
       })
     )
