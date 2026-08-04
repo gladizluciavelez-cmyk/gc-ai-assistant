@@ -157,6 +157,15 @@ model EmailRecord {
   actionItem    String?       @db.Text
   requiresReply Boolean       @default(false)
 
+  // Structured pre-bid/mandatory meeting info, extracted from the email body
+  // only when explicitly stated (never guessed from an attachment reference).
+  // Populated by classification; addedToCalendar flips once the GC confirms
+  // it via the dashboard's "Confirm & add to Calendar" button.
+  meetingTitle    String?
+  meetingAt       DateTime?
+  meetingAddress  String?
+  addedToCalendar Boolean   @default(false)
+
   project   Project? @relation(fields: [projectId], references: [id])
   projectId String?
 

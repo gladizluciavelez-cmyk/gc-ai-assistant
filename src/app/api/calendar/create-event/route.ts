@@ -6,9 +6,10 @@ import { prisma } from "@/lib/prisma";
 
 /**
  * Creates a Google Calendar event for the signed-in user.
- * Body: { title, description?, startISO, endISO?, location?, bidId? }
- * If bidId is provided and the event is created successfully, the Bid
- * row is marked addedToCalendar = true so the dashboard doesn't re-offer it.
+ * Body: { title, description?, startISO, endISO?, location?, bidId?, emailId? }
+ * If bidId is provided, the Bid row is marked addedToCalendar = true.
+ * If emailId is provided (the "confirm this pre-bid meeting" flow), the
+ * EmailRecord is marked addedToCalendar = true instead.
  */
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -21,13 +22,14 @@ export async function POST(req: NextRequest) {
   const userId = (session.user as { id: string }).id;
 
   const body = await req.json();
-  const { title, description, startISO, endISO, location, bidId } = body as {
+  const { title, description, startISO, endISO, location, bidId, emailId } = body as {
     title: string;
     description?: string;
     startISO: string;
     endISO?: string;
     location?: string;
     bidId?: string;
+    emailId?: string;
   };
 
   if (!title || !startISO) {
@@ -56,6 +58,13 @@ export async function POST(req: NextRequest) {
       await prisma.bid.update({
         where: { id: bidId },
         data: { addedToCalendar: true, preBidMeetingAt: start },
+      });
+    }
+
+    if (emailId) {
+      await prisma.emailRecord.update({
+        where: { id: emailId },
+        data: { addedToCalendar: true },
       });
     }
 

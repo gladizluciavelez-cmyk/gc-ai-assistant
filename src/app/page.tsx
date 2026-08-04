@@ -7,6 +7,7 @@ import { SyncControls } from "@/components/SyncControls";
 import { AssignProjectSelect } from "@/components/AssignProjectSelect";
 import { ConvertBidButton } from "@/components/ConvertBidButton";
 import { TaskCheckbox } from "@/components/TaskCheckbox";
+import { ConfirmMeetingButton } from "@/components/ConfirmMeetingButton";
 
 export const dynamic = "force-dynamic";
 
@@ -44,28 +45,33 @@ export default async function DashboardPage({
     Math.ceil(EMAILS_TOTAL / EMAILS_PER_PAGE)
   );
 
-  const [todayTasks, allRecentEmails, openPermits, recentBids, projects] = await Promise.all([
-    prisma.taskItem.findMany({
-      where: { planDate: today, status: "TODO" },
-      orderBy: { createdAt: "asc" },
-      include: { email: { select: { gmailId: true } } },
-    }),
-    prisma.emailRecord.findMany({
-      orderBy: { receivedAt: "desc" },
-      take: EMAILS_TOTAL,
-    }),
-    prisma.permit.findMany({
-      where: { status: { not: "APPROVED" } },
-      include: { project: true },
-      take: 10,
-    }),
-    prisma.bid.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 10,
-      where: { project: null },
-    }),
-    prisma.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
-  ]);
+  const [todayTasks, allRecentEmails, openPermits, recentBids, projects, pendingMeetings] =
+    await Promise.all([
+      prisma.taskItem.findMany({
+        where: { planDate: today, status: "TODO" },
+        orderBy: { createdAt: "asc" },
+        include: { email: { select: { gmailId: true } } },
+      }),
+      prisma.emailRecord.findMany({
+        orderBy: { receivedAt: "desc" },
+        take: EMAILS_TOTAL,
+      }),
+      prisma.permit.findMany({
+        where: { status: { not: "APPROVED" } },
+        include: { project: true },
+        take: 10,
+      }),
+      prisma.bid.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 10,
+        where: { project: null },
+      }),
+      prisma.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+      prisma.emailRecord.findMany({
+        where: { meetingAt: { not: null }, addedToCalendar: false },
+        orderBy: { meetingAt: "asc" },
+      }),
+    ]);
 
   const totalEmailPages = Math.max(1, Math.ceil(allRecentEmails.length / EMAILS_PER_PAGE));
   const recentEmails = allRecentEmails.slice(
@@ -91,6 +97,48 @@ export default async function DashboardPage({
       <section className="mb-10">
         <SyncControls />
       </section>
+
+      {pendingMeetings.length > 0 && (
+        <section className="mb-10">
+          <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 shadow-sm">
+            <h2 className="mb-3 text-lg font-semibold text-amber-900">
+              Pending pre-bid meetings
+            </h2>
+            <ul className="space-y-3">
+              {pendingMeetings.map((m) => (
+                <li
+                  key={m.id}
+                  className="flex flex-col gap-2 rounded-md border border-amber-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="font-medium">{m.meetingTitle ?? m.subject}</p>
+                    <p className="text-sm text-slate-600">
+                      {m.meetingAt?.toLocaleString("en-US", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
+                      {m.meetingAddress ? ` · ${m.meetingAddress}` : ""}
+                    </p>
+                    <a
+                      href={gmailLink(m.gmailId)}
+                      target="_blank"
+                      className="text-sm text-brand-600 underline"
+                    >
+                      View email
+                    </a>
+                  </div>
+                  <ConfirmMeetingButton
+                    emailId={m.id}
+                    title={m.meetingTitle ?? m.subject}
+                    startISO={m.meetingAt!.toISOString()}
+                    location={m.meetingAddress}
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
 
       <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
         <Card title="Today's plan">
