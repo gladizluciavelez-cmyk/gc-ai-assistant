@@ -16,6 +16,10 @@ const PROJECT_STATUSES = [
   "COMPLETE",
 ];
 
+function gmailLink(gmailId: string) {
+  return `https://mail.google.com/mail/u/0/#all/${gmailId}`;
+}
+
 const PERMIT_STATUSES = [
   "NOT_SUBMITTED",
   "SUBMITTED",
@@ -115,7 +119,13 @@ export default async function ProjectDetailPage({
           <ul className="space-y-2">
             {project.emails.map((e) => (
               <li key={e.id} className="text-sm">
-                <span className="font-medium">{e.subject}</span>
+                <a
+                  href={gmailLink(e.gmailId)}
+                  target="_blank"
+                  className="font-medium text-brand-600 underline hover:text-brand-700"
+                >
+                  {e.subject}
+                </a>
                 <span className="text-slate-500"> — {e.summary}</span>
               </li>
             ))}
