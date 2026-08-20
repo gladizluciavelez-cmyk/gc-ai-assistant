@@ -7,6 +7,8 @@
 const MUNICIPALITIES = [
   "Unincorporated Miami-Dade",
   "Miami-Dade County",
+  "Broward County",
+  "Palm Beach County",
   "North Miami Beach",
   "Lauderdale-by-the-Sea",
   "West Palm Beach",

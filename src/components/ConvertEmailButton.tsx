@@ -28,7 +28,7 @@ export function ConvertEmailButton({ emailId }: { emailId: string }) {
       disabled={submitting}
       className="text-sm text-brand-600 underline disabled:opacity-50"
     >
-      {submitting ? "Creating…" : "Bid on this"}
+      {submitting ? "Saving…" : "Placed Bid"}
     </button>
   );
 }

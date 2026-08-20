@@ -352,6 +352,15 @@ export default async function DashboardPage({
                             {o.trade}
                           </span>
                         )}
+                        {(!o.municipality || !o.trade) && (
+                          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                            ⚠ Check {!o.municipality && !o.trade
+                              ? "municipality/trade"
+                              : !o.municipality
+                              ? "municipality"
+                              : "trade"}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <p className="text-sm text-slate-500">{o.subtitle}</p>
