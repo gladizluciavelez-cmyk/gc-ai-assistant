@@ -48,7 +48,7 @@ export function ConvertEmailButton({
     <button
       onClick={onClick}
       disabled={submitting}
-      className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+      className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
     >
       {submitting ? "Saving…" : "Placed Bid"}
     </button>
