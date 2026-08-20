@@ -9,6 +9,7 @@ import { ConvertBidButton } from "@/components/ConvertBidButton";
 import { TaskCheckbox } from "@/components/TaskCheckbox";
 import { ConfirmMeetingButton } from "@/components/ConfirmMeetingButton";
 import { ConvertEmailButton } from "@/components/ConvertEmailButton";
+import { SkipBidButton } from "@/components/SkipBidButton";
 import { detectMunicipality, detectTrade, isBidConfirmation } from "@/lib/bid-tags";
 
 export const dynamic = "force-dynamic";
@@ -55,6 +56,7 @@ export default async function DashboardPage({
     bidInviteEmails,
     projects,
     pendingMeetings,
+    recentDecisions,
   ] = await Promise.all([
     prisma.taskItem.findMany({
       where: { planDate: today, status: "TODO" },
@@ -85,7 +87,12 @@ export default async function DashboardPage({
       where: { meetingAt: { not: null }, addedToCalendar: false },
       orderBy: { meetingAt: "asc" },
     }),
+    // Any Skip/Placed decision already made — used to drop that opportunity
+    // out of the feed below rather than leaving it dangling after a decision.
+    prisma.bidDecisionLog.findMany({ select: { sourceType: true, sourceId: true } }),
   ]);
+
+  const decidedKeys = new Set(recentDecisions.map((d) => `${d.sourceType}-${d.sourceId}`));
 
   const totalEmailPages = Math.max(1, Math.ceil(allRecentEmails.length / EMAILS_PER_PAGE));
   const recentEmails = allRecentEmails.slice(
@@ -121,30 +128,42 @@ export default async function DashboardPage({
       };
 
   const bidOpportunities: BidOpportunity[] = [
-    ...recentBids.map((b): BidOpportunity => {
-      const text = `${b.title} ${b.agency ?? ""} ${b.projectType ?? ""}`;
-      return {
-        kind: "bid",
-        id: `bid-${b.id}`,
-        date: b.createdAt,
-        title: b.title,
-        subtitle: [b.agency, b.projectType].filter(Boolean).join(" · ") || b.source,
-        url: b.url,
-        bidId: b.id,
-        municipality: (b.agency && detectMunicipality(b.agency)) ?? detectMunicipality(text),
-        trade: detectTrade(text),
-      };
-    }),
+    ...recentBids
+      .filter((b) => !decidedKeys.has(`bid-${b.id}`))
+      .map((b): BidOpportunity => {
+        const text = `${b.title} ${b.agency ?? ""} ${b.projectType ?? ""}`;
+        return {
+          kind: "bid",
+          id: `bid-${b.id}`,
+          date: b.createdAt,
+          title: b.title,
+          subtitle: [b.agency, b.projectType].filter(Boolean).join(" · ") || b.source,
+          url: b.url,
+          bidId: b.id,
+          municipality: (b.agency && detectMunicipality(b.agency)) ?? detectMunicipality(text),
+          trade: detectTrade(text),
+        };
+      }),
     ...bidInviteEmails
       .filter((e) => !isBidConfirmation(`${e.subject} ${e.summary ?? ""}`))
+      .filter((e) => !decidedKeys.has(`email-${e.id}`))
       .map((e): BidOpportunity => {
         const text = `${e.subject} ${e.summary ?? ""} ${e.from}`;
+        // Prefer the structured parse (project #, short agency name, 1-3
+        // word summary) over the raw subject line — agencies format their
+        // subjects too inconsistently to rely on the raw text as a title.
+        const titleParts = [
+          e.bidProjectNumber ? `Project No. ${e.bidProjectNumber}` : null,
+          e.bidAgencyShort,
+          e.bidSummary,
+        ].filter(Boolean);
+        const title = titleParts.length > 0 ? titleParts.join(", ") : e.subject;
         return {
           kind: "email",
           id: `email-${e.id}`,
           date: e.receivedAt,
-          title: e.subject,
-          subtitle: e.summary ?? e.from,
+          title,
+          subtitle: e.bidAddress ?? e.summary ?? e.from,
           gmailId: e.gmailId,
           emailId: e.id,
           municipality: detectMunicipality(text),
@@ -163,6 +182,9 @@ export default async function DashboardPage({
         <div className="flex items-center gap-4">
           <Link href="/projects" className="text-sm text-brand-600 underline">
             Projects
+          </Link>
+          <Link href="/bid-decisions" className="text-sm text-brand-600 underline">
+            Bid Decisions
           </Link>
           <SignOutButton />
         </div>
@@ -366,12 +388,22 @@ export default async function DashboardPage({
                       </div>
                     </div>
                     <p className="text-sm text-slate-500">{o.subtitle}</p>
-                    <div className="mt-1 flex items-center gap-3">
+                    <div className="mt-1 flex flex-wrap items-center gap-3">
                       {o.kind === "bid" ? (
-                        <ConvertBidButton bidId={o.bidId} />
+                        <ConvertBidButton
+                          bidId={o.bidId}
+                          title={o.title}
+                          municipality={o.municipality}
+                          trade={o.trade}
+                        />
                       ) : (
                         <>
-                          <ConvertEmailButton emailId={o.emailId} />
+                          <ConvertEmailButton
+                            emailId={o.emailId}
+                            title={o.title}
+                            municipality={o.municipality}
+                            trade={o.trade}
+                          />
                           <AssignProjectSelect
                             emailId={o.emailId}
                             currentProjectId={null}
@@ -379,6 +411,13 @@ export default async function DashboardPage({
                           />
                         </>
                       )}
+                      <SkipBidButton
+                        sourceType={o.kind}
+                        sourceId={o.kind === "bid" ? o.bidId : o.emailId}
+                        title={o.title}
+                        municipality={o.municipality}
+                        trade={o.trade}
+                      />
                     </div>
                   </li>
                 );

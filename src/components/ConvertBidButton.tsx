@@ -3,7 +3,17 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-export function ConvertBidButton({ bidId }: { bidId: string }) {
+export function ConvertBidButton({
+  bidId,
+  title,
+  municipality,
+  trade,
+}: {
+  bidId: string;
+  title?: string;
+  municipality?: string | null;
+  trade?: string | null;
+}) {
   const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
 
@@ -12,6 +22,20 @@ export function ConvertBidButton({ bidId }: { bidId: string }) {
     try {
       const res = await fetch(`/api/bids/${bidId}/convert`, { method: "POST" });
       const data = await res.json();
+      if (title) {
+        await fetch("/api/bid-decisions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sourceType: "bid",
+            sourceId: bidId,
+            decision: "PLACED",
+            title,
+            municipality,
+            trade,
+          }),
+        });
+      }
       if (res.ok && data.project?.id) {
         router.push(`/projects/${data.project.id}`);
       } else {
