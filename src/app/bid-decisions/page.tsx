@@ -50,7 +50,7 @@ export default async function BidDecisionsPage() {
         <div>
           <h1 className="text-2xl font-semibold">Bid Decisions</h1>
           <p className="text-sm text-slate-500">
-            Every "Placed Bid" / "Skip" decision made from Bid Opportunities.
+            Every &quot;Placed Bid&quot; / &quot;Skip&quot; decision made from Bid Opportunities.
           </p>
         </div>
         <Link href="/" className="text-sm text-brand-600 underline">
