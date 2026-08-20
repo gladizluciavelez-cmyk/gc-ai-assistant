@@ -9,7 +9,7 @@ import { ConvertBidButton } from "@/components/ConvertBidButton";
 import { TaskCheckbox } from "@/components/TaskCheckbox";
 import { ConfirmMeetingButton } from "@/components/ConfirmMeetingButton";
 import { ConvertEmailButton } from "@/components/ConvertEmailButton";
-import { detectMunicipality, detectTrade } from "@/lib/bid-tags";
+import { detectMunicipality, detectTrade, isBidConfirmation } from "@/lib/bid-tags";
 
 export const dynamic = "force-dynamic";
 
@@ -135,20 +135,22 @@ export default async function DashboardPage({
         trade: detectTrade(text),
       };
     }),
-    ...bidInviteEmails.map((e): BidOpportunity => {
-      const text = `${e.subject} ${e.summary ?? ""} ${e.from}`;
-      return {
-        kind: "email",
-        id: `email-${e.id}`,
-        date: e.receivedAt,
-        title: e.subject,
-        subtitle: e.summary ?? e.from,
-        gmailId: e.gmailId,
-        emailId: e.id,
-        municipality: detectMunicipality(text),
-        trade: detectTrade(text),
-      };
-    }),
+    ...bidInviteEmails
+      .filter((e) => !isBidConfirmation(`${e.subject} ${e.summary ?? ""}`))
+      .map((e): BidOpportunity => {
+        const text = `${e.subject} ${e.summary ?? ""} ${e.from}`;
+        return {
+          kind: "email",
+          id: `email-${e.id}`,
+          date: e.receivedAt,
+          title: e.subject,
+          subtitle: e.summary ?? e.from,
+          gmailId: e.gmailId,
+          emailId: e.id,
+          municipality: detectMunicipality(text),
+          trade: detectTrade(text),
+        };
+      }),
   ].sort((a, b) => b.date.getTime() - a.date.getTime());
 
   return (
