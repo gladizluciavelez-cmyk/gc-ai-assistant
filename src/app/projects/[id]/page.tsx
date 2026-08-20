@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { InlineSelect } from "@/components/InlineSelect";
+import { EditProjectForm } from "@/components/EditProjectForm";
 import { NewSubcontractorForm } from "@/components/NewSubcontractorForm";
 import { NewPermitForm } from "@/components/NewPermitForm";
 
@@ -52,18 +53,48 @@ export default async function ProjectDetailPage({
         ← All projects
       </Link>
 
-      <div className="mt-4 mb-8 flex items-center justify-between">
+      <div className="mt-4 mb-2 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">{project.name}</h1>
           <p className="text-sm text-slate-500">
             {project.client ?? "No client set"} · {project.address ?? "No address set"}
+            {project.projectType ? ` · ${project.projectType}` : ""}
           </p>
+          {(project.startDate || project.targetDate) && (
+            <p className="text-xs text-slate-400">
+              {project.startDate
+                ? `Start ${project.startDate.toLocaleDateString("en-US")}`
+                : ""}
+              {project.startDate && project.targetDate ? " · " : ""}
+              {project.targetDate
+                ? `Target ${project.targetDate.toLocaleDateString("en-US")}`
+                : ""}
+            </p>
+          )}
+          {project.notes && <p className="mt-1 text-sm text-slate-600">{project.notes}</p>}
         </div>
         <InlineSelect
           endpoint={`/api/projects/${project.id}`}
           field="status"
           value={project.status}
           options={PROJECT_STATUSES}
+        />
+      </div>
+
+      <div className="mb-8">
+        <EditProjectForm
+          projectId={project.id}
+          initial={{
+            name: project.name,
+            client: project.client ?? "",
+            address: project.address ?? "",
+            projectType: project.projectType ?? "",
+            notes: project.notes ?? "",
+            startDate: project.startDate ? project.startDate.toISOString().slice(0, 10) : "",
+            targetDate: project.targetDate
+              ? project.targetDate.toISOString().slice(0, 10)
+              : "",
+          }}
         />
       </div>
 
