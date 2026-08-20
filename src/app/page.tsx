@@ -45,39 +45,83 @@ export default async function DashboardPage({
     Math.ceil(EMAILS_TOTAL / EMAILS_PER_PAGE)
   );
 
-  const [todayTasks, allRecentEmails, openPermits, recentBids, projects, pendingMeetings] =
-    await Promise.all([
-      prisma.taskItem.findMany({
-        where: { planDate: today, status: "TODO" },
-        orderBy: { createdAt: "asc" },
-        include: { email: { select: { gmailId: true } } },
-      }),
-      prisma.emailRecord.findMany({
-        orderBy: { receivedAt: "desc" },
-        take: EMAILS_TOTAL,
-      }),
-      prisma.permit.findMany({
-        where: { status: { not: "APPROVED" } },
-        include: { project: true },
-        take: 10,
-      }),
-      prisma.bid.findMany({
-        orderBy: { createdAt: "desc" },
-        take: 10,
-        where: { project: null },
-      }),
-      prisma.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
-      prisma.emailRecord.findMany({
-        where: { meetingAt: { not: null }, addedToCalendar: false },
-        orderBy: { meetingAt: "asc" },
-      }),
-    ]);
+  const [
+    todayTasks,
+    allRecentEmails,
+    openPermits,
+    recentBids,
+    bidInviteEmails,
+    projects,
+    pendingMeetings,
+  ] = await Promise.all([
+    prisma.taskItem.findMany({
+      where: { planDate: today, status: "TODO" },
+      orderBy: { createdAt: "asc" },
+      include: { email: { select: { gmailId: true } } },
+    }),
+    prisma.emailRecord.findMany({
+      orderBy: { receivedAt: "desc" },
+      take: EMAILS_TOTAL,
+    }),
+    prisma.permit.findMany({
+      where: { status: { not: "APPROVED" } },
+      include: { project: true },
+      take: 10,
+    }),
+    prisma.bid.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 10,
+      where: { project: null },
+    }),
+    prisma.emailRecord.findMany({
+      where: { category: "BID_INVITE", project: null },
+      orderBy: { receivedAt: "desc" },
+      take: 10,
+    }),
+    prisma.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.emailRecord.findMany({
+      where: { meetingAt: { not: null }, addedToCalendar: false },
+      orderBy: { meetingAt: "asc" },
+    }),
+  ]);
 
   const totalEmailPages = Math.max(1, Math.ceil(allRecentEmails.length / EMAILS_PER_PAGE));
   const recentEmails = allRecentEmails.slice(
     (emailPage - 1) * EMAILS_PER_PAGE,
     emailPage * EMAILS_PER_PAGE
   );
+
+  // Merge scraped bids (Miami-Dade, DemandStar, etc.) and bid-invite emails
+  // (OpenGov and similar) into one "Bid Opportunities" feed, newest first,
+  // each tagged with where it came from.
+  type BidOpportunity =
+    | { kind: "bid"; id: string; date: Date; title: string; subtitle: string; url: string | null; bidId: string }
+    | { kind: "email"; id: string; date: Date; title: string; subtitle: string; gmailId: string; emailId: string };
+
+  const bidOpportunities: BidOpportunity[] = [
+    ...recentBids.map(
+      (b): BidOpportunity => ({
+        kind: "bid",
+        id: `bid-${b.id}`,
+        date: b.createdAt,
+        title: b.title,
+        subtitle: [b.agency, b.projectType].filter(Boolean).join(" · ") || b.source,
+        url: b.url,
+        bidId: b.id,
+      })
+    ),
+    ...bidInviteEmails.map(
+      (e): BidOpportunity => ({
+        kind: "email",
+        id: `email-${e.id}`,
+        date: e.receivedAt,
+        title: e.subject,
+        subtitle: e.summary ?? e.from,
+        gmailId: e.gmailId,
+        emailId: e.id,
+      })
+    ),
+  ].sort((a, b) => b.date.getTime() - a.date.getTime());
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-10">
@@ -245,28 +289,50 @@ export default async function DashboardPage({
           )}
         </Card>
 
-        <Card title="Recent bids">
-          {recentBids.length === 0 ? (
-            <Empty text="No bids scraped yet — click “Scrape Miami-Dade bids.”" />
+        <Card title="Bid Opportunities">
+          {bidOpportunities.length === 0 ? (
+            <Empty text="No bid opportunities yet — sync Gmail or scrape a bid site." />
           ) : (
             <ul className="space-y-2">
-              {recentBids.map((b) => (
-                <li key={b.id} className="rounded-md border border-slate-200 p-3">
-                  <p className="font-medium">{b.title}</p>
-                  <p className="text-sm text-slate-500">
-                    {b.agency} · {b.projectType}
-                  </p>
+              {bidOpportunities.map((o) => (
+                <li key={o.id} className="rounded-md border border-slate-200 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-medium">{o.title}</p>
+                    <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                      {o.kind === "bid" ? "Bid site" : "Email"}
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-500">{o.subtitle}</p>
                   <div className="mt-1 flex items-center gap-3">
-                    {b.url && (
-                      <a
-                        href={b.url}
-                        target="_blank"
-                        className="text-sm text-brand-600 underline"
-                      >
-                        View listing
-                      </a>
+                    {o.kind === "bid" ? (
+                      <>
+                        {o.url && (
+                          <a
+                            href={o.url}
+                            target="_blank"
+                            className="text-sm text-brand-600 underline"
+                          >
+                            View listing
+                          </a>
+                        )}
+                        <ConvertBidButton bidId={o.bidId} />
+                      </>
+                    ) : (
+                      <>
+                        <a
+                          href={gmailLink(o.gmailId)}
+                          target="_blank"
+                          className="text-sm text-brand-600 underline"
+                        >
+                          View email
+                        </a>
+                        <AssignProjectSelect
+                          emailId={o.emailId}
+                          currentProjectId={null}
+                          projects={projects}
+                        />
+                      </>
                     )}
-                    <ConvertBidButton bidId={b.id} />
                   </div>
                 </li>
               ))}
