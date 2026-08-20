@@ -8,6 +8,8 @@ import { AssignProjectSelect } from "@/components/AssignProjectSelect";
 import { ConvertBidButton } from "@/components/ConvertBidButton";
 import { TaskCheckbox } from "@/components/TaskCheckbox";
 import { ConfirmMeetingButton } from "@/components/ConfirmMeetingButton";
+import { ConvertEmailButton } from "@/components/ConvertEmailButton";
+import { detectMunicipality, detectTrade } from "@/lib/bid-tags";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +30,7 @@ export default async function DashboardPage({
   if (!session?.user) {
     return (
       <main className="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center gap-6 px-4 text-center">
-        <h1 className="text-2xl font-semibold">GC Assistant</h1>
+        <h1 className="text-2xl font-semibold">Regosa Engineering Services, Inc.</h1>
         <p className="text-slate-600">
           Connect your Google account to let the assistant read your inbox for
           project/subcontractor/permit updates and create calendar events for
@@ -95,12 +97,33 @@ export default async function DashboardPage({
   // (OpenGov and similar) into one "Bid Opportunities" feed, newest first,
   // each tagged with where it came from.
   type BidOpportunity =
-    | { kind: "bid"; id: string; date: Date; title: string; subtitle: string; url: string | null; bidId: string }
-    | { kind: "email"; id: string; date: Date; title: string; subtitle: string; gmailId: string; emailId: string };
+    | {
+        kind: "bid";
+        id: string;
+        date: Date;
+        title: string;
+        subtitle: string;
+        url: string | null;
+        bidId: string;
+        municipality: string | null;
+        trade: string | null;
+      }
+    | {
+        kind: "email";
+        id: string;
+        date: Date;
+        title: string;
+        subtitle: string;
+        gmailId: string;
+        emailId: string;
+        municipality: string | null;
+        trade: string | null;
+      };
 
   const bidOpportunities: BidOpportunity[] = [
-    ...recentBids.map(
-      (b): BidOpportunity => ({
+    ...recentBids.map((b): BidOpportunity => {
+      const text = `${b.title} ${b.agency ?? ""} ${b.projectType ?? ""}`;
+      return {
         kind: "bid",
         id: `bid-${b.id}`,
         date: b.createdAt,
@@ -108,10 +131,13 @@ export default async function DashboardPage({
         subtitle: [b.agency, b.projectType].filter(Boolean).join(" · ") || b.source,
         url: b.url,
         bidId: b.id,
-      })
-    ),
-    ...bidInviteEmails.map(
-      (e): BidOpportunity => ({
+        municipality: (b.agency && detectMunicipality(b.agency)) ?? detectMunicipality(text),
+        trade: detectTrade(text),
+      };
+    }),
+    ...bidInviteEmails.map((e): BidOpportunity => {
+      const text = `${e.subject} ${e.summary ?? ""} ${e.from}`;
+      return {
         kind: "email",
         id: `email-${e.id}`,
         date: e.receivedAt,
@@ -119,15 +145,17 @@ export default async function DashboardPage({
         subtitle: e.summary ?? e.from,
         gmailId: e.gmailId,
         emailId: e.id,
-      })
-    ),
+        municipality: detectMunicipality(text),
+        trade: detectTrade(text),
+      };
+    }),
   ].sort((a, b) => b.date.getTime() - a.date.getTime());
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-10">
       <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">GC Assistant</h1>
+          <h1 className="text-2xl font-semibold">Regosa Engineering Services, Inc.</h1>
           <p className="text-sm text-slate-500">Signed in as {session.user.email}</p>
         </div>
         <div className="flex items-center gap-4">
@@ -294,48 +322,56 @@ export default async function DashboardPage({
             <Empty text="No bid opportunities yet — sync Gmail or scrape a bid site." />
           ) : (
             <ul className="space-y-2">
-              {bidOpportunities.map((o) => (
-                <li key={o.id} className="rounded-md border border-slate-200 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-medium">{o.title}</p>
-                    <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                      {o.kind === "bid" ? "Bid site" : "Email"}
-                    </span>
-                  </div>
-                  <p className="text-sm text-slate-500">{o.subtitle}</p>
-                  <div className="mt-1 flex items-center gap-3">
-                    {o.kind === "bid" ? (
-                      <>
-                        {o.url && (
-                          <a
-                            href={o.url}
-                            target="_blank"
-                            className="text-sm text-brand-600 underline"
-                          >
-                            View listing
-                          </a>
+              {bidOpportunities.map((o) => {
+                const href = o.kind === "bid" ? o.url : gmailLink(o.gmailId);
+                return (
+                  <li key={o.id} className="rounded-md border border-slate-200 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        {o.municipality && (
+                          <p className="text-sm font-bold text-slate-700">{o.municipality}</p>
                         )}
+                        {href ? (
+                          <a
+                            href={href}
+                            target="_blank"
+                            className="font-medium text-brand-600 underline hover:text-brand-700"
+                          >
+                            {o.title}
+                          </a>
+                        ) : (
+                          <p className="font-medium">{o.title}</p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                          {o.kind === "bid" ? "Bid site" : "Email"}
+                        </span>
+                        {o.trade && (
+                          <span className="rounded bg-brand-50 px-2 py-0.5 text-xs text-brand-700">
+                            {o.trade}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-sm text-slate-500">{o.subtitle}</p>
+                    <div className="mt-1 flex items-center gap-3">
+                      {o.kind === "bid" ? (
                         <ConvertBidButton bidId={o.bidId} />
-                      </>
-                    ) : (
-                      <>
-                        <a
-                          href={gmailLink(o.gmailId)}
-                          target="_blank"
-                          className="text-sm text-brand-600 underline"
-                        >
-                          View email
-                        </a>
-                        <AssignProjectSelect
-                          emailId={o.emailId}
-                          currentProjectId={null}
-                          projects={projects}
-                        />
-                      </>
-                    )}
-                  </div>
-                </li>
-              ))}
+                      ) : (
+                        <>
+                          <ConvertEmailButton emailId={o.emailId} />
+                          <AssignProjectSelect
+                            emailId={o.emailId}
+                            currentProjectId={null}
+                            projects={projects}
+                          />
+                        </>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </Card>
