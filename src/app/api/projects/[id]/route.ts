@@ -30,5 +30,27 @@ export async function PATCH(
     },
   });
 
+  // Marking a project "Not Awarded" moves it into the Bid Decisions log so
+  // it shows up in the win/loss analysis rather than just sitting in the
+  // projects list with a status no one checks.
+  if (status === "NOT_AWARDED") {
+    await prisma.bidDecisionLog.upsert({
+      where: { sourceType_sourceId: { sourceType: "project", sourceId: project.id } },
+      create: {
+        sourceType: "project",
+        sourceId: project.id,
+        decision: "NOT_AWARDED",
+        title: project.name,
+        municipality: null,
+        trade: project.projectType,
+      },
+      update: {
+        decision: "NOT_AWARDED",
+        title: project.name,
+        trade: project.projectType,
+      },
+    });
+  }
+
   return NextResponse.json({ ok: true, project });
 }

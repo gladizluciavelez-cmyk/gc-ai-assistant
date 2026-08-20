@@ -5,12 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { SignInButton, SignOutButton } from "@/components/AuthButton";
 import { SyncControls } from "@/components/SyncControls";
 import { AssignProjectSelect } from "@/components/AssignProjectSelect";
-import { ConvertBidButton } from "@/components/ConvertBidButton";
 import { TaskCheckbox } from "@/components/TaskCheckbox";
 import { ConfirmMeetingButton } from "@/components/ConfirmMeetingButton";
-import { ConvertEmailButton } from "@/components/ConvertEmailButton";
-import { SkipBidButton } from "@/components/SkipBidButton";
-import { detectMunicipality, detectTrade, isBidConfirmation } from "@/lib/bid-tags";
 
 export const dynamic = "force-dynamic";
 
@@ -48,16 +44,7 @@ export default async function DashboardPage({
     Math.ceil(EMAILS_TOTAL / EMAILS_PER_PAGE)
   );
 
-  const [
-    todayTasks,
-    allRecentEmails,
-    openPermits,
-    recentBids,
-    bidInviteEmails,
-    projects,
-    pendingMeetings,
-    recentDecisions,
-  ] = await Promise.all([
+  const [todayTasks, allRecentEmails, projects, pendingMeetings] = await Promise.all([
     prisma.taskItem.findMany({
       where: { planDate: today, status: "TODO" },
       orderBy: { createdAt: "asc" },
@@ -67,110 +54,18 @@ export default async function DashboardPage({
       orderBy: { receivedAt: "desc" },
       take: EMAILS_TOTAL,
     }),
-    prisma.permit.findMany({
-      where: { status: { not: "APPROVED" } },
-      include: { project: true },
-      take: 10,
-    }),
-    prisma.bid.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 10,
-      where: { project: null },
-    }),
-    prisma.emailRecord.findMany({
-      where: { category: "BID_INVITE", project: null },
-      orderBy: { receivedAt: "desc" },
-      take: 10,
-    }),
     prisma.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.emailRecord.findMany({
       where: { meetingAt: { not: null }, addedToCalendar: false },
       orderBy: { meetingAt: "asc" },
     }),
-    // Any Skip/Placed decision already made — used to drop that opportunity
-    // out of the feed below rather than leaving it dangling after a decision.
-    prisma.bidDecisionLog.findMany({ select: { sourceType: true, sourceId: true } }),
   ]);
-
-  const decidedKeys = new Set(recentDecisions.map((d) => `${d.sourceType}-${d.sourceId}`));
 
   const totalEmailPages = Math.max(1, Math.ceil(allRecentEmails.length / EMAILS_PER_PAGE));
   const recentEmails = allRecentEmails.slice(
     (emailPage - 1) * EMAILS_PER_PAGE,
     emailPage * EMAILS_PER_PAGE
   );
-
-  // Merge scraped bids (Miami-Dade, DemandStar, etc.) and bid-invite emails
-  // (OpenGov and similar) into one "Bid Opportunities" feed, newest first,
-  // each tagged with where it came from.
-  type BidOpportunity =
-    | {
-        kind: "bid";
-        id: string;
-        date: Date;
-        title: string;
-        subtitle: string;
-        url: string | null;
-        bidId: string;
-        municipality: string | null;
-        trade: string | null;
-      }
-    | {
-        kind: "email";
-        id: string;
-        date: Date;
-        title: string;
-        subtitle: string;
-        gmailId: string;
-        emailId: string;
-        municipality: string | null;
-        trade: string | null;
-      };
-
-  const bidOpportunities: BidOpportunity[] = [
-    ...recentBids
-      .filter((b) => !decidedKeys.has(`bid-${b.id}`))
-      .map((b): BidOpportunity => {
-        const text = `${b.title} ${b.agency ?? ""} ${b.projectType ?? ""}`;
-        return {
-          kind: "bid",
-          id: `bid-${b.id}`,
-          date: b.createdAt,
-          title: b.title,
-          subtitle: [b.agency, b.projectType].filter(Boolean).join(" · ") || b.source,
-          url: b.url,
-          bidId: b.id,
-          municipality: (b.agency && detectMunicipality(b.agency)) ?? detectMunicipality(text),
-          trade: detectTrade(text),
-        };
-      }),
-    ...bidInviteEmails
-      .filter((e) => !isBidConfirmation(`${e.subject} ${e.summary ?? ""}`))
-      .filter((e) => !decidedKeys.has(`email-${e.id}`))
-      .map((e): BidOpportunity => {
-        const text = `${e.subject} ${e.summary ?? ""} ${e.from}`;
-        // Prefer the structured parse (project #, short agency name, 1-3
-        // word summary) over the raw subject line — agencies format their
-        // subjects too inconsistently to rely on the raw text as a title.
-        const titleParts = [
-          e.bidProjectNumber ? `Project No. ${e.bidProjectNumber}` : null,
-          e.bidAgencyShort,
-          e.bidSummary,
-        ].filter(Boolean);
-        const title = titleParts.length > 0 ? titleParts.join(", ") : e.subject;
-        return {
-          kind: "email",
-          id: `email-${e.id}`,
-          date: e.receivedAt,
-          title,
-          subtitle: e.bidAddress ?? e.summary ?? e.from,
-          gmailId: e.gmailId,
-          emailId: e.id,
-          municipality: detectMunicipality(text),
-          trade: detectTrade(text),
-        };
-      }),
-  ].sort((a, b) => b.date.getTime() - a.date.getTime());
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-10">
@@ -183,6 +78,9 @@ export default async function DashboardPage({
           <Link href="/projects" className="text-sm text-brand-600 underline">
             Projects
           </Link>
+          <Link href="/bid-opportunities" className="text-sm text-brand-600 underline">
+            Bid Opportunities
+          </Link>
           <Link href="/bid-decisions" className="text-sm text-brand-600 underline">
             Bid Decisions
           </Link>
@@ -191,6 +89,7 @@ export default async function DashboardPage({
       </div>
 
       <section className="mb-10">
+        <h2 className="mb-2 text-xl font-semibold text-slate-800">Email Tracking</h2>
         <SyncControls />
       </section>
 
@@ -321,108 +220,6 @@ export default async function DashboardPage({
                 </div>
               )}
             </>
-          )}
-        </Card>
-
-        <Card title="Open permits">
-          {openPermits.length === 0 ? (
-            <Empty text="No open permits tracked yet." />
-          ) : (
-            <ul className="space-y-2">
-              {openPermits.map((p) => (
-                <li key={p.id} className="rounded-md border border-slate-200 p-3">
-                  <p className="font-medium">{p.name}</p>
-                  <p className="text-sm text-slate-500">
-                    {p.project?.name ?? "Unassigned project"} — {p.status}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-
-        <Card title="Bid Opportunities">
-          {bidOpportunities.length === 0 ? (
-            <Empty text="No bid opportunities yet — sync Gmail or scrape a bid site." />
-          ) : (
-            <ul className="space-y-2">
-              {bidOpportunities.map((o) => {
-                const href = o.kind === "bid" ? o.url : gmailLink(o.gmailId);
-                return (
-                  <li key={o.id} className="rounded-md border border-slate-200 p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        {o.municipality && (
-                          <p className="text-sm font-bold text-slate-700">{o.municipality}</p>
-                        )}
-                        {href ? (
-                          <a
-                            href={href}
-                            target="_blank"
-                            className="font-medium text-brand-600 underline hover:text-brand-700"
-                          >
-                            {o.title}
-                          </a>
-                        ) : (
-                          <p className="font-medium">{o.title}</p>
-                        )}
-                      </div>
-                      <div className="flex shrink-0 flex-col items-end gap-1">
-                        <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                          {o.kind === "bid" ? "Bid site" : "Email"}
-                        </span>
-                        {o.trade && (
-                          <span className="rounded bg-brand-50 px-2 py-0.5 text-xs text-brand-700">
-                            {o.trade}
-                          </span>
-                        )}
-                        {(!o.municipality || !o.trade) && (
-                          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
-                            ⚠ Check {!o.municipality && !o.trade
-                              ? "municipality/trade"
-                              : !o.municipality
-                              ? "municipality"
-                              : "trade"}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <p className="text-sm text-slate-500">{o.subtitle}</p>
-                    <div className="mt-1 flex flex-wrap items-center gap-3">
-                      {o.kind === "bid" ? (
-                        <ConvertBidButton
-                          bidId={o.bidId}
-                          title={o.title}
-                          municipality={o.municipality}
-                          trade={o.trade}
-                        />
-                      ) : (
-                        <>
-                          <ConvertEmailButton
-                            emailId={o.emailId}
-                            title={o.title}
-                            municipality={o.municipality}
-                            trade={o.trade}
-                          />
-                          <AssignProjectSelect
-                            emailId={o.emailId}
-                            currentProjectId={null}
-                            projects={projects}
-                          />
-                        </>
-                      )}
-                      <SkipBidButton
-                        sourceType={o.kind}
-                        sourceId={o.kind === "bid" ? o.bidId : o.emailId}
-                        title={o.title}
-                        municipality={o.municipality}
-                        trade={o.trade}
-                      />
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
           )}
         </Card>
       </div>

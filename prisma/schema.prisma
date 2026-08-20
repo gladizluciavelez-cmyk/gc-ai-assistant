@@ -61,6 +61,7 @@ model Session {
 enum ProjectStatus {
   BIDDING
   AWARDED
+  NOT_AWARDED
   PRECONSTRUCTION
   IN_PROGRESS
   ON_HOLD
@@ -185,6 +186,7 @@ model EmailRecord {
 enum BidDecisionType {
   PLACED
   SKIPPED
+  NOT_AWARDED
 }
 
 // Log of every "Placed Bid" / "Skip" decision the GC makes on a Bid

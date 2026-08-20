@@ -24,6 +24,7 @@ export default async function BidDecisionsPage() {
 
   const placed = decisions.filter((d) => d.decision === "PLACED");
   const skipped = decisions.filter((d) => d.decision === "SKIPPED");
+  const notAwarded = decisions.filter((d) => d.decision === "NOT_AWARDED");
 
   const reasonCounts = new Map<string, number>();
   for (const d of skipped) {
@@ -58,15 +59,18 @@ export default async function BidDecisionsPage() {
         </Link>
       </div>
 
-      <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-5">
         <StatCard label="Placed" value={placed.length} />
         <StatCard label="Skipped" value={skipped.length} />
+        <StatCard label="Not Awarded" value={notAwarded.length} />
         <StatCard
-          label="Placed rate"
+          label="Win rate"
           value={
-            decisions.length === 0
+            placed.length === 0
               ? "—"
-              : `${Math.round((placed.length / decisions.length) * 100)}%`
+              : `${Math.round(
+                  ((placed.length - notAwarded.length) / placed.length) * 100
+                )}%`
           }
         />
         <StatCard label="Total decisions" value={decisions.length} />
@@ -130,10 +134,16 @@ export default async function BidDecisionsPage() {
                     className={`shrink-0 rounded px-2 py-0.5 text-xs ${
                       d.decision === "PLACED"
                         ? "bg-green-100 text-green-800"
+                        : d.decision === "NOT_AWARDED"
+                        ? "bg-red-100 text-red-800"
                         : "bg-slate-200 text-slate-700"
                     }`}
                   >
-                    {d.decision === "PLACED" ? "Placed Bid" : "Skipped"}
+                    {d.decision === "PLACED"
+                      ? "Placed Bid"
+                      : d.decision === "NOT_AWARDED"
+                      ? "Not Awarded"
+                      : "Skipped"}
                   </span>
                 </div>
                 <p className="text-sm text-slate-500">

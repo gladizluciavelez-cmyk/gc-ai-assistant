@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 const PROJECT_STATUSES = [
   "BIDDING",
   "AWARDED",
+  "NOT_AWARDED",
   "PRECONSTRUCTION",
   "IN_PROGRESS",
   "ON_HOLD",

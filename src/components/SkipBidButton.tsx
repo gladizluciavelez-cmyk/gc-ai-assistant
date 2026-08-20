@@ -57,7 +57,7 @@ export function SkipBidButton({
     return (
       <button
         onClick={() => setOpen(true)}
-        className="text-sm text-slate-500 underline hover:text-slate-700"
+        className="rounded-md border border-red-600 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
       >
         Skip / Not placing bid
       </button>
