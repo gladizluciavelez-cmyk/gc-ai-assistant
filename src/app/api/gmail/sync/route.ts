@@ -46,7 +46,18 @@ export async function POST(req: NextRequest) {
         headers: { Authorization: `Bearer ${sharedSecret}` },
       }
     );
-    const data = await res.json();
+
+    // The email agent can crash hard enough (timeout, unhandled exception)
+    // that it returns an empty or non-JSON body — calling res.json() on that
+    // throws "Unexpected end of JSON input" and hides the real error. Read
+    // the raw text first so we can always surface something readable.
+    const rawText = await res.text();
+    let data: unknown;
+    try {
+      data = rawText ? JSON.parse(rawText) : null;
+    } catch {
+      data = { error: rawText || `Email agent returned an empty response (status ${res.status}).` };
+    }
 
     if (!res.ok) {
       return NextResponse.json(data, { status: res.status });

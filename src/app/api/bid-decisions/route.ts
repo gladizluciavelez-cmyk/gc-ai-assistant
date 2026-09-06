@@ -17,9 +17,9 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const { sourceType, sourceId, decision, reason, title, municipality, trade } = body as {
-    sourceType: "bid" | "email";
+    sourceType: "bid" | "email" | "project";
     sourceId: string;
-    decision: "PLACED" | "SKIPPED";
+    decision: "PLACED" | "SKIPPED" | "NOT_AWARDED" | "DISMISSED";
     reason?: string | null;
     title: string;
     municipality?: string | null;

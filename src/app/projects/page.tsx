@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { NewProjectForm } from "@/components/NewProjectForm";
+import { NewPermitWithProjectForm } from "@/components/NewPermitWithProjectForm";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,8 @@ export default async function ProjectsPage() {
       take: 10,
     }),
   ]);
+
+  const projectOptions = projects.map((p) => ({ id: p.id, name: p.name }));
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-10">
@@ -64,6 +67,7 @@ export default async function ProjectsPage() {
 
         <div>
           <h2 className="mb-3 text-lg font-semibold">Open permits</h2>
+          <NewPermitWithProjectForm projects={projectOptions} />
           {openPermits.length === 0 ? (
             <p className="text-sm text-slate-400">No open permits tracked yet.</p>
           ) : (

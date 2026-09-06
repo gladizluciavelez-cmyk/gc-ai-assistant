@@ -3,10 +3,12 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { SignInButton } from "@/components/AuthButton";
+import { ActionButton } from "@/components/ActionButton";
 import { AssignProjectSelect } from "@/components/AssignProjectSelect";
 import { ConvertBidButton } from "@/components/ConvertBidButton";
 import { ConvertEmailButton } from "@/components/ConvertEmailButton";
 import { SkipBidButton } from "@/components/SkipBidButton";
+import { DismissBidButton } from "@/components/DismissBidButton";
 import { detectMunicipality, detectTrade, isBidConfirmation } from "@/lib/bid-tags";
 
 export const dynamic = "force-dynamic";
@@ -151,6 +153,10 @@ export default async function BidOpportunitiesPage() {
         </div>
       </div>
 
+      <section className="mb-6">
+        <ActionButton label="Scrape Miami-Dade bids" endpoint="/api/scrape/miami-dade" />
+      </section>
+
       {bidOpportunities.length === 0 ? (
         <p className="text-sm text-slate-400">
           No bid opportunities yet — sync Gmail or scrape a bid site.
@@ -249,6 +255,11 @@ export default async function BidOpportunitiesPage() {
                     title={o.title}
                     municipality={o.municipality}
                     trade={o.trade}
+                  />
+                  <DismissBidButton
+                    sourceType={o.kind}
+                    sourceId={o.kind === "bid" ? o.bidId : o.emailId}
+                    title={o.title}
                   />
                 </div>
 

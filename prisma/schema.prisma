@@ -187,6 +187,7 @@ enum BidDecisionType {
   PLACED
   SKIPPED
   NOT_AWARDED
+  DISMISSED
 }
 
 // Log of every "Placed Bid" / "Skip" decision the GC makes on a Bid

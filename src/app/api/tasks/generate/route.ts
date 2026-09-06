@@ -90,10 +90,12 @@ export async function POST(req: NextRequest) {
     2
   );
 
-  const message = await anthropic.messages.create({
-    model: CLAUDE_MODEL,
-    max_tokens: 1200,
-    system: `You are planning today's priorities for a general contractor (GC) based
+  let message;
+  try {
+    message = await anthropic.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 1200,
+      system: `You are planning today's priorities for a general contractor (GC) based
 on recent emails, open permits, and upcoming pre-bid meetings. Produce a short,
 prioritized list of concrete tasks for today. Skip anything already in
 "alreadyOpenTasks". Respond with ONLY a JSON array, no prose, shaped as:
@@ -102,8 +104,25 @@ prioritized list of concrete tasks for today. Skip anything already in
 task came from (copy it exactly), or null if the task isn't tied to one specific
 email (e.g. it came from a permit or pre-bid meeting instead).
 Keep it to at most 8 tasks, most urgent first.`,
-    messages: [{ role: "user", content: context }],
-  });
+      messages: [{ role: "user", content: context }],
+    });
+  } catch (err) {
+    // Without this, a bad/expired ANTHROPIC_API_KEY (or any Anthropic API
+    // error) throws uncaught here, and the resulting crash can reach the
+    // browser as an empty/non-JSON response — which shows up as "Unexpected
+    // end of JSON input" on the Generate today's plan button instead of a
+    // readable error.
+    console.error("Anthropic call failed while generating today's plan", err);
+    return NextResponse.json(
+      {
+        error:
+          err instanceof Error
+            ? `Failed to generate plan: ${err.message}`
+            : "Failed to generate plan: unknown error calling Claude",
+      },
+      { status: 502 }
+    );
+  }
 
   const text = message.content
     .filter((b) => b.type === "text")

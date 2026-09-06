@@ -18,9 +18,14 @@ export default async function BidDecisionsPage() {
     );
   }
 
-  const decisions = await prisma.bidDecisionLog.findMany({
+  const allLogs = await prisma.bidDecisionLog.findMany({
     orderBy: { createdAt: "desc" },
   });
+
+  // DISMISSED entries are AI misreads the GC removed from the feed — not
+  // real bidding decisions, so they're excluded from every stat/breakdown
+  // here. The row still exists in the table so the opportunity stays hidden.
+  const decisions = allLogs.filter((d) => d.decision !== "DISMISSED");
 
   const placed = decisions.filter((d) => d.decision === "PLACED");
   const skipped = decisions.filter((d) => d.decision === "SKIPPED");
