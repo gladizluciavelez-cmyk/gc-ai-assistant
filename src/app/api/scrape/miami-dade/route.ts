@@ -1,26 +1,35 @@
 import { NextResponse } from "next/server";
-import * as cheerio from "cheerio";
 import { prisma } from "@/lib/prisma";
 import { classifyProjectType } from "@/lib/bid-classify";
 
 export const maxDuration = 60;
 
-const SOURCE_URL = "https://www.miamidade.gov/apps/ISD/stratproc/Home/CurrentSolicitations";
+const LIST_URL = "https://www.miamidade.gov/apps/isd/StratProc/Home/CurrentSolicitationsList";
+const DETAILS_BASE = "https://www.miamidade.gov/apps/isd/StratProc/Home/SolicitationDetails";
+
+interface SolicitationRow {
+  solicitationNumber: string;
+  solicitationType: string;
+  title: string;
+  openingDate: string;
+  postedDate: string;
+}
 
 /**
- * Miami-Dade's "Construction Solicitations" page is public, static
- * server-rendered HTML with no login wall and no robots.txt restriction
- * (checked manually — Disallow rules only cover /private/ and auth flows).
- *
- * We deliberately parse the table generically (find the table whose header
- * row mentions "Solicitation") rather than hardcoding CSS classes, since
- * ASP.NET-rendered markup tends to use auto-generated class names that can
- * change between deploys.
+ * The "Construction Solicitations" page itself is a client-rendered
+ * DataTable — the static HTML always says "No data to show right now"
+ * because the real rows are fetched by the page's own JS after load. This
+ * scraper hits that same underlying JSON endpoint directly (found via the
+ * browser's network tab: CurrentSolicitationsList) instead of parsing HTML
+ * that will never contain the data server-side.
  */
 export async function POST() {
   try {
-    const res = await fetch(SOURCE_URL, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; GC-Assistant/1.0)" },
+    const res = await fetch(LIST_URL, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; GC-Assistant/1.0)",
+        Accept: "application/json",
+      },
     });
 
     if (!res.ok) {
@@ -30,39 +39,23 @@ export async function POST() {
       );
     }
 
-    const html = await res.text();
-    const $ = cheerio.load(html);
+    const rows: SolicitationRow[] = await res.json();
 
-    // Find the table whose header row contains "Solicitation"
-    let table: ReturnType<typeof $> | null = null;
-    $("table").each((_, el) => {
-      const headerText = $(el).find("th").first().parent().text();
-      if (/solicitation/i.test(headerText)) {
-        table = $(el);
-      }
-    });
-
-    if (!table) {
+    if (!Array.isArray(rows) || rows.length === 0) {
       return NextResponse.json({
         ok: true,
         created: 0,
-        note: "No solicitations table found — likely means the page currently shows 'No data to show right now'.",
+        skipped: 0,
+        note: "No construction solicitations currently posted.",
       });
     }
 
-    const rows = (table as ReturnType<typeof $>).find("tbody tr");
     let created = 0;
     let skipped = 0;
 
-    for (const row of rows.toArray()) {
-      const cells = $(row).find("td").map((_, td) => $(td).text().trim()).get();
-      if (cells.length < 3) continue;
-
-      const [externalId, , title, openingDateRaw, postedDateRaw] = cells;
-      const link = $(row).find("a").first().attr("href");
-      const url = link
-        ? new URL(link, "https://www.miamidade.gov").toString()
-        : SOURCE_URL;
+    for (const row of rows) {
+      const externalId = row.solicitationNumber;
+      if (!externalId || !row.title) continue;
 
       const existing = await prisma.bid.findUnique({
         where: { source_externalId: { source: "MIAMI_DADE", externalId } },
@@ -72,19 +65,20 @@ export async function POST() {
         continue;
       }
 
-      const projectType = await classifyProjectType(title);
+      const projectType = await classifyProjectType(row.title, row.solicitationType);
+      const url = `${DETAILS_BASE}?solNumber=${encodeURIComponent(externalId)}`;
 
       await prisma.bid.create({
         data: {
           source: "MIAMI_DADE",
           externalId,
-          title,
+          title: row.title,
           agency: "Miami-Dade County",
           projectType,
-          openingDate: parseDateSafe(openingDateRaw),
-          postedDate: parseDateSafe(postedDateRaw),
+          openingDate: parseDateSafe(row.openingDate),
+          postedDate: parseDateSafe(row.postedDate),
           url,
-          rawText: cells.join(" | "),
+          rawText: `${externalId} | ${row.solicitationType} | ${row.title} | ${row.openingDate} | ${row.postedDate}`,
         },
       });
       created++;

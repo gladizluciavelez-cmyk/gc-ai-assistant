@@ -22,14 +22,26 @@ export function ActionButton({
       // calling res.json() directly on that throws a cryptic "Unexpected
       // end of JSON input" instead of a useful message. Read as text first.
       const rawText = await res.text();
-      let data: { error?: string } = {};
+      let data: { error?: string; created?: number; skipped?: number; note?: string } = {};
       try {
         data = rawText ? JSON.parse(rawText) : {};
       } catch {
         data = { error: rawText || `Request failed with status ${res.status}` };
       }
       if (!res.ok) throw new Error(data.error ?? "Request failed");
-      setMessage("Complete!");
+
+      // Surface what actually happened instead of a generic "Complete!" —
+      // otherwise finding 0 new results looks identical to finding 5, and
+      // there's no way to tell a working-but-empty scrape from a broken one.
+      if (typeof data.created === "number") {
+        const parts = [`${data.created} new`];
+        if (typeof data.skipped === "number" && data.skipped > 0) {
+          parts.push(`${data.skipped} already had`);
+        }
+        setMessage(data.note ? `${parts.join(", ")} — ${data.note}` : parts.join(", "));
+      } else {
+        setMessage("Complete!");
+      }
       setStatus("done");
       router.refresh();
     } catch (err) {
