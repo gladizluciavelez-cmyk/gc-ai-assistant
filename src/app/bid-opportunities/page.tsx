@@ -154,7 +154,10 @@ export default async function BidOpportunitiesPage() {
       </div>
 
       <section className="mb-6">
-        <ActionButton label="Scrape Miami-Dade bids" endpoint="/api/scrape/miami-dade" />
+        <ActionButton label="Scrape Miami-Dade municipalities" endpoint="/api/scrape/all" />
+        <p className="mt-1 text-xs text-slate-400">
+          Currently scrapes: Miami-Dade County, Hialeah Gardens, Doral, Miami Springs, Miami Shores.
+        </p>
       </section>
 
       {bidOpportunities.length === 0 ? (

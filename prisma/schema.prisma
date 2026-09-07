@@ -241,6 +241,10 @@ model TaskItem {
 enum BidSource {
   MIAMI_DADE
   DEMANDSTAR
+  HIALEAH_GARDENS
+  DORAL
+  MIAMI_SPRINGS
+  MIAMI_SHORES
   MANUAL
 }
 

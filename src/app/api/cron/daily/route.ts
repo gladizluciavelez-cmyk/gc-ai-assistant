@@ -5,7 +5,8 @@ export const maxDuration = 300;
 
 /**
  * Entry point for Vercel Cron (see vercel.json). Runs once a day: generates
- * today's task plan for every connected user, and scrapes Miami-Dade bids.
+ * today's task plan for every connected user, and scrapes bids across every
+ * supported Miami-Dade-area municipality (see /api/scrape/all).
  *
  * Gmail syncing is NOT triggered from here anymore — that's owned by the
  * separate gc-email-agent service, which has its own cron. Schedule that
@@ -38,9 +39,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const bidRes = await fetch(`${baseUrl}/api/scrape/miami-dade`, { method: "POST" }).catch(
-    () => null
-  );
+  const bidRes = await fetch(`${baseUrl}/api/scrape/all`, { method: "POST" }).catch(() => null);
 
   return NextResponse.json({
     ok: true,
