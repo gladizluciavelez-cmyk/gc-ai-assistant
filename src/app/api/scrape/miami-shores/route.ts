@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import * as cheerio from "cheerio";
 import { prisma } from "@/lib/prisma";
 import { classifyProjectType } from "@/lib/bid-classify";
+import { browserHeaders } from "@/lib/scrape-fetch";
 
 export const maxDuration = 60;
 
@@ -18,9 +19,7 @@ const PAGE_URL = "https://www.msvfl.gov/CurrentSolicitations";
  */
 export async function POST() {
   try {
-    const res = await fetch(PAGE_URL, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; GC-Assistant/1.0)" },
-    });
+    const res = await fetch(PAGE_URL, { headers: browserHeaders() });
 
     if (!res.ok) {
       return NextResponse.json(

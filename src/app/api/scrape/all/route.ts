@@ -16,6 +16,14 @@ const SCRAPERS: { label: string; path: string }[] = [
   { label: "Doral", path: "/api/scrape/doral" },
   { label: "Miami Springs", path: "/api/scrape/miami-springs" },
   { label: "Miami Shores", path: "/api/scrape/miami-shores" },
+  { label: "City of Miami", path: "/api/scrape/miami" },
+  { label: "Miami Beach", path: "/api/scrape/miami-beach" },
+  { label: "North Miami", path: "/api/scrape/north-miami" },
+  { label: "Bay Harbor Islands", path: "/api/scrape/bay-harbor-islands" },
+  { label: "Opa-locka", path: "/api/scrape/opa-locka" },
+  { label: "Florida City", path: "/api/scrape/florida-city" },
+  { label: "Surfside", path: "/api/scrape/surfside" },
+  { label: "Cutler Bay", path: "/api/scrape/cutler-bay" },
 ];
 
 export async function POST(req: Request) {

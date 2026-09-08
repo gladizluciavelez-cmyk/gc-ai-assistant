@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { classifyProjectType } from "@/lib/bid-classify";
+import { browserHeaders } from "@/lib/scrape-fetch";
 
 export const maxDuration = 60;
 
@@ -26,10 +27,7 @@ interface SolicitationRow {
 export async function POST() {
   try {
     const res = await fetch(LIST_URL, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; GC-Assistant/1.0)",
-        Accept: "application/json",
-      },
+      headers: browserHeaders({ Accept: "application/json" }),
     });
 
     if (!res.ok) {
