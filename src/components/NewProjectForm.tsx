@@ -44,9 +44,9 @@ export function NewProjectForm() {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="mb-6 rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700"
+        className="rounded-lg bg-brand-600 px-6 py-3 text-[15px] font-semibold text-white hover:bg-brand-700"
       >
-        + New project
+        +  New Project
       </button>
     );
   }

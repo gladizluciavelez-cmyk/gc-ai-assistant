@@ -2,32 +2,29 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { SignInButton } from "@/components/AuthButton";
+import { AppShell } from "@/components/AppShell";
+import { SignInScreen } from "@/components/SignInScreen";
 import { ActionButton } from "@/components/ActionButton";
 import { AssignProjectSelect } from "@/components/AssignProjectSelect";
 import { ConvertBidButton } from "@/components/ConvertBidButton";
 import { ConvertEmailButton } from "@/components/ConvertEmailButton";
+import { ConfirmMeetingButton } from "@/components/ConfirmMeetingButton";
 import { SkipBidButton } from "@/components/SkipBidButton";
 import { DismissBidButton } from "@/components/DismissBidButton";
+import { COVERED_SOURCES, Empty, PageHeader, Tag, gmailLink, shortDate } from "@/components/ui";
 import { detectMunicipality, detectTrade, isBidConfirmation } from "@/lib/bid-tags";
 
 export const dynamic = "force-dynamic";
 
-function gmailLink(gmailId: string) {
-  return `https://mail.google.com/mail/u/0/#all/${gmailId}`;
-}
+const fmt = (d: Date) => d.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 
-export default async function BidOpportunitiesPage() {
+export default async function BidOpportunitiesPage({
+  searchParams,
+}: {
+  searchParams: { municipality?: string; trade?: string; source?: string };
+}) {
   const session = await getServerSession(authOptions);
-
-  if (!session?.user) {
-    return (
-      <main className="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center gap-6 px-4 text-center">
-        <h1 className="text-2xl font-semibold">Bid Opportunities</h1>
-        <SignInButton />
-      </main>
-    );
-  }
+  if (!session?.user) return <SignInScreen />;
 
   const [recentBids, bidInviteEmails, projects, recentDecisions] = await Promise.all([
     prisma.bid.findMany({
@@ -48,42 +45,27 @@ export default async function BidOpportunitiesPage() {
 
   const decidedKeys = new Set(recentDecisions.map((d) => `${d.sourceType}-${d.sourceId}`));
 
-  // Merge scraped bids (Miami-Dade, DemandStar, etc.) and bid-invite emails
-  // (OpenGov and similar) into one "Bid Opportunities" feed, newest first,
-  // each tagged with where it came from.
-  type BidOpportunity =
-    | {
-        kind: "bid";
-        id: string;
-        date: Date;
-        title: string;
-        address: string | null;
-        scope: string | null;
-        meetingTitle: string | null;
-        meetingAt: Date | null;
-        meetingAddress: string | null;
-        url: string | null;
-        bidId: string;
-        municipality: string | null;
-        trade: string | null;
-      }
-    | {
-        kind: "email";
-        id: string;
-        date: Date;
-        title: string;
-        address: string | null;
-        scope: string | null;
-        meetingTitle: string | null;
-        meetingAt: Date | null;
-        meetingAddress: string | null;
-        gmailId: string;
-        emailId: string;
-        municipality: string | null;
-        trade: string | null;
-      };
+  // Merge public bid listings and bid-invite emails (OpenGov and similar)
+  // into one feed, newest first, each tagged with where it came from.
+  type BidOpportunity = {
+    id: string;
+    date: Date;
+    title: string;
+    agency: string | null;
+    address: string | null;
+    scope: string | null;
+    dueAt: Date | null;
+    meetingTitle: string | null;
+    meetingAt: Date | null;
+    meetingAddress: string | null;
+    municipality: string | null;
+    trade: string | null;
+  } & (
+    | { kind: "bid"; url: string | null; bidId: string }
+    | { kind: "email"; gmailId: string; emailId: string; addedToCalendar: boolean }
+  );
 
-  const bidOpportunities: BidOpportunity[] = [
+  const allOpportunities: BidOpportunity[] = [
     ...recentBids
       .filter((b) => !decidedKeys.has(`bid-${b.id}`))
       .map((b): BidOpportunity => {
@@ -93,10 +75,12 @@ export default async function BidOpportunitiesPage() {
           id: `bid-${b.id}`,
           date: b.createdAt,
           title: b.title,
+          agency: [b.agency, b.externalId].filter(Boolean).join(" · ") || null,
           address: null,
           scope: b.projectType ?? null,
+          dueAt: b.openingDate,
           meetingTitle: null,
-          meetingAt: null,
+          meetingAt: b.preBidMeetingAt,
           meetingAddress: null,
           url: b.url,
           bidId: b.id,
@@ -123,168 +107,271 @@ export default async function BidOpportunitiesPage() {
           id: `email-${e.id}`,
           date: e.receivedAt,
           title,
+          agency: e.bidAgencyShort ?? null,
           address: e.bidAddress ?? null,
           scope: e.bidSummary ?? null,
+          dueAt: null,
           meetingTitle: e.meetingTitle ?? null,
           meetingAt: e.meetingAt ?? null,
           meetingAddress: e.meetingAddress ?? null,
           gmailId: e.gmailId,
           emailId: e.id,
+          addedToCalendar: e.addedToCalendar,
           municipality: detectMunicipality(text),
           trade: detectTrade(text),
         };
       }),
   ].sort((a, b) => b.date.getTime() - a.date.getTime());
 
+  // Filter options come from what's actually in the feed.
+  const municipalities = Array.from(
+    new Set(allOpportunities.map((o) => o.municipality).filter(Boolean) as string[])
+  ).sort();
+  const trades = Array.from(
+    new Set(allOpportunities.map((o) => o.trade).filter(Boolean) as string[])
+  ).sort();
+
+  const { municipality = "", trade = "", source = "" } = searchParams;
+  const bidOpportunities = allOpportunities.filter(
+    (o) =>
+      (!municipality || o.municipality === municipality) &&
+      (!trade || o.trade === trade) &&
+      (!source || o.kind === source)
+  );
+  const filtered = Boolean(municipality || trade || source);
+  const lastUpdated = recentBids[0]?.createdAt;
+
   return (
-    <main className="mx-auto max-w-5xl px-4 py-10">
-      <div className="mb-8 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Bid Opportunities</h1>
-        <div className="flex items-center gap-4">
-          <Link href="/" className="text-sm text-brand-600 underline">
-            ← Dashboard
-          </Link>
-          <Link href="/projects" className="text-sm text-brand-600 underline">
-            Projects
-          </Link>
-          <Link href="/bid-decisions" className="text-sm text-brand-600 underline">
-            Bid Decisions
-          </Link>
-        </div>
-      </div>
+    <AppShell user={session.user}>
+      <PageHeader
+        eyebrow="Public listings + your inbox"
+        title="Bid Opportunities"
+        subtitle={`${allOpportunities.length} open bid${
+          allOpportunities.length === 1 ? "" : "s"
+        } from South Florida municipalities and bid-invite emails, in one feed`}
+        actions={
+          <div className="flex flex-col items-start gap-1 sm:items-end">
+            <ActionButton label="↻  Refresh bids" endpoint="/api/scrape/all" />
+            {lastUpdated && (
+              <span className="text-xs text-slate-500">Last updated {shortDate(lastUpdated)}</span>
+            )}
+          </div>
+        }
+      />
 
       <section className="mb-6">
-        <ActionButton label="Scrape Miami-Dade municipalities" endpoint="/api/scrape/all" />
-        <p className="mt-1 text-xs text-slate-400">
-          Currently scrapes: Miami-Dade County, Hialeah Gardens, Doral, Miami Springs, Miami Shores,
-          City of Miami, Miami Beach, North Miami, Bay Harbor Islands, Opa-locka, Florida City,
-          Surfside, Cutler Bay.
+        <h2 className="text-lg font-semibold text-slate-900">South Florida Bids</h2>
+        <p className="mb-3 text-sm text-slate-500">
+          Checked daily from these public bid sources, plus bid invites in your inbox.
         </p>
+        <div className="flex flex-wrap gap-2">
+          {COVERED_SOURCES.map((s) => (
+            <span
+              key={s}
+              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600"
+            >
+              {s}
+            </span>
+          ))}
+          <span className="rounded-md border border-violet-200 bg-violet-50 px-2 py-1 text-xs font-medium text-violet-800">
+            Your inbox
+          </span>
+        </div>
       </section>
 
+      <form
+        method="get"
+        className="mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-3"
+      >
+        <FilterSelect name="municipality" label="Municipality" value={municipality}>
+          {municipalities.map((m) => (
+            <option key={m}>{m}</option>
+          ))}
+        </FilterSelect>
+        <FilterSelect name="trade" label="Trade / Scope" value={trade}>
+          {trades.map((t) => (
+            <option key={t}>{t}</option>
+          ))}
+        </FilterSelect>
+        <FilterSelect name="source" label="Source" value={source}>
+          <option value="bid">Public listing</option>
+          <option value="email">From email</option>
+        </FilterSelect>
+        <button
+          type="submit"
+          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+        >
+          Apply
+        </button>
+        {filtered && (
+          <Link href="/bid-opportunities" className="px-2 text-sm text-slate-500 hover:underline">
+            Clear filters
+          </Link>
+        )}
+        <span className="ml-auto text-xs text-slate-500">
+          Showing {bidOpportunities.length} of {allOpportunities.length}
+        </span>
+      </form>
+
       {bidOpportunities.length === 0 ? (
-        <p className="text-sm text-slate-400">
-          No bid opportunities yet — sync Gmail or scrape a bid site.
-        </p>
+        <Empty
+          text={
+            filtered
+              ? "No bids match these filters."
+              : "No bid opportunities yet — sync Gmail or refresh bids."
+          }
+        />
       ) : (
-        <ul className="space-y-2">
+        <ul className="grid grid-cols-1 gap-5 xl:grid-cols-2">
           {bidOpportunities.map((o) => {
             const href = o.kind === "bid" ? o.url : gmailLink(o.gmailId);
+            const meeting = [
+              o.meetingTitle,
+              o.meetingAt && fmt(o.meetingAt),
+              o.meetingAddress,
+            ]
+              .filter(Boolean)
+              .join(" · ");
+            const canConfirmMeeting =
+              o.kind === "email" && o.meetingAt && !o.addedToCalendar && o.meetingAt > new Date();
+            const details: [string, string | null][] = [
+              ["Municipality", o.municipality],
+              ["Address", o.address],
+              ["Scope", o.scope],
+              ["Pre-Bid Meeting", meeting || null],
+              ["Bid Due", o.dueAt ? fmt(o.dueAt) : null],
+            ];
             return (
-              <li key={o.id} className="rounded-md border border-slate-200 bg-white p-3 shadow-sm">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    {o.municipality && (
-                      <p className="text-sm font-bold text-slate-700">{o.municipality}</p>
-                    )}
-                    {href ? (
-                      <a
-                        href={href}
-                        target="_blank"
-                        className="font-medium text-brand-600 underline hover:text-brand-700"
-                      >
-                        {o.title}
-                      </a>
-                    ) : (
-                      <p className="font-medium">{o.title}</p>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1">
-                    <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                      {o.kind === "bid" ? "Bid site" : "Email"}
-                    </span>
-                    {o.trade && (
-                      <span className="rounded bg-brand-50 px-2 py-0.5 text-xs text-brand-700">
-                        {o.trade}
-                      </span>
-                    )}
-                    {(!o.municipality || !o.trade) && (
-                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
-                        ⚠ Check {!o.municipality && !o.trade
-                          ? "municipality/trade"
-                          : !o.municipality
-                          ? "municipality"
-                          : "trade"}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-1 space-y-0.5 text-sm text-slate-500">
-                  {o.address && (
-                    <p>
-                      <span className="font-medium text-slate-600">Address:</span> {o.address}
-                    </p>
-                  )}
-                  {o.scope && (
-                    <p>
-                      <span className="font-medium text-slate-600">Scope:</span> {o.scope}
-                    </p>
-                  )}
-                  {(o.meetingTitle || o.meetingAt || o.meetingAddress) && (
-                    <p>
-                      <span className="font-medium text-slate-600">Pre-Bid Meeting:</span>{" "}
-                      {[
-                        o.meetingTitle,
-                        o.meetingAt?.toLocaleString("en-US", {
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        }),
-                        o.meetingAddress,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </p>
-                  )}
-                </div>
-
-                <div className="mt-2 flex flex-wrap items-center gap-2">
+              <li
+                key={o.id}
+                className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5"
+              >
+                <div className="flex flex-wrap items-center gap-1.5">
                   {o.kind === "bid" ? (
-                    <ConvertBidButton
-                      bidId={o.bidId}
-                      title={o.title}
-                      municipality={o.municipality}
-                      trade={o.trade}
-                    />
+                    <Tag tone="sky">Public listing</Tag>
                   ) : (
-                    <ConvertEmailButton
-                      emailId={o.emailId}
-                      title={o.title}
-                      municipality={o.municipality}
-                      trade={o.trade}
-                    />
+                    <Tag tone="violet">From email</Tag>
                   )}
-                  <SkipBidButton
-                    sourceType={o.kind}
-                    sourceId={o.kind === "bid" ? o.bidId : o.emailId}
-                    title={o.title}
-                    municipality={o.municipality}
-                    trade={o.trade}
-                  />
-                  <DismissBidButton
-                    sourceType={o.kind}
-                    sourceId={o.kind === "bid" ? o.bidId : o.emailId}
-                    title={o.title}
-                  />
+                  {o.trade && <Tag>{o.trade}</Tag>}
+                  <span className="ml-auto text-xs text-slate-400">{shortDate(o.date)}</span>
                 </div>
 
-                {o.kind === "email" && (
-                  <div className="mt-3 w-full">
-                    <p className="mb-1 text-xs font-medium text-slate-500">Relevant Project:</p>
-                    <div className="w-full [&>select]:w-full">
-                      <AssignProjectSelect
-                        emailId={o.emailId}
-                        currentProjectId={null}
-                        projects={projects}
-                      />
+                <div>
+                  {href ? (
+                    <a
+                      href={href}
+                      target="_blank"
+                      className="text-[17px] font-semibold leading-6 text-slate-900 hover:text-brand-700 hover:underline"
+                    >
+                      {o.title}
+                    </a>
+                  ) : (
+                    <p className="text-[17px] font-semibold leading-6">{o.title}</p>
+                  )}
+                  {o.agency && <p className="mt-0.5 text-[13px] text-slate-500">{o.agency}</p>}
+                </div>
+
+                <dl className="space-y-2 rounded-xl bg-slate-50 px-4 py-3 text-[13px]">
+                  {details.map(([k, v]) => (
+                    <div key={k} className="grid grid-cols-[110px_minmax(0,1fr)] gap-3">
+                      <dt className="text-xs font-semibold text-slate-500">{k}</dt>
+                      <dd className={v ? "text-slate-900" : "text-slate-400"}>
+                        {v ?? (k === "Municipality" ? "⚠ Check municipality" : "—")}
+                      </dd>
                     </div>
+                  ))}
+                </dl>
+
+                {canConfirmMeeting && o.kind === "email" && (
+                  <div className="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center">
+                    <div className="flex-1">
+                      <p className="text-[13px] font-semibold text-amber-900">
+                        Pre-bid meeting detected
+                      </p>
+                      <p className="text-xs text-amber-700">
+                        Date, time and location found in the email text
+                      </p>
+                    </div>
+                    <ConfirmMeetingButton
+                      emailId={o.emailId}
+                      title={o.meetingTitle ?? o.title}
+                      startISO={o.meetingAt!.toISOString()}
+                      location={o.meetingAddress}
+                    />
                   </div>
                 )}
+
+                {o.kind === "email" && (
+                  <div>
+                    <p className="mb-1.5 text-xs font-semibold text-slate-600">Relevant Project:</p>
+                    <AssignProjectSelect
+                      emailId={o.emailId}
+                      currentProjectId={null}
+                      projects={projects}
+                    />
+                  </div>
+                )}
+
+                <div className="mt-auto flex flex-col gap-2">
+                  <div className="flex gap-2.5">
+                    {o.kind === "bid" ? (
+                      <ConvertBidButton
+                        bidId={o.bidId}
+                        title={o.title}
+                        municipality={o.municipality}
+                        trade={o.trade}
+                      />
+                    ) : (
+                      <ConvertEmailButton
+                        emailId={o.emailId}
+                        title={o.title}
+                        municipality={o.municipality}
+                        trade={o.trade}
+                      />
+                    )}
+                    <SkipBidButton
+                      sourceType={o.kind}
+                      sourceId={o.kind === "bid" ? o.bidId : o.emailId}
+                      title={o.title}
+                      municipality={o.municipality}
+                      trade={o.trade}
+                    />
+                  </div>
+                  <div className="text-right">
+                    <DismissBidButton
+                      sourceType={o.kind}
+                      sourceId={o.kind === "bid" ? o.bidId : o.emailId}
+                      title={o.title}
+                    />
+                  </div>
+                </div>
               </li>
             );
           })}
         </ul>
       )}
-    </main>
+    </AppShell>
+  );
+}
+
+function FilterSelect({
+  name,
+  label,
+  value,
+  children,
+}: {
+  name: string;
+  label: string;
+  value: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+      <span className="text-slate-500">{label}:</span>
+      <select name={name} defaultValue={value} className="bg-transparent font-semibold outline-none">
+        <option value="">All</option>
+        {children}
+      </select>
+    </label>
   );
 }

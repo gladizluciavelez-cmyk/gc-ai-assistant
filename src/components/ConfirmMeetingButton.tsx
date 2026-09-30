@@ -43,13 +43,13 @@ export function ConfirmMeetingButton({
   }
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex shrink-0 flex-col gap-1">
       <button
         onClick={onClick}
         disabled={submitting}
-        className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+        className="whitespace-nowrap rounded-lg bg-amber-600 px-3 py-2 text-[13px] font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
       >
-        {submitting ? "Adding…" : "Confirm & add to Calendar"}
+        {submitting ? "Adding…" : "Confirm & Add to Calendar"}
       </button>
       {error && <span className="text-xs text-red-600">{error}</span>}
     </div>

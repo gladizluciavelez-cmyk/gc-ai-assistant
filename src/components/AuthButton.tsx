@@ -6,19 +6,23 @@ export function SignInButton() {
   return (
     <button
       onClick={() => signIn("google")}
-      className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+      className="flex w-full items-center justify-center gap-2.5 rounded-lg bg-slate-900 px-4 py-3 text-[15px] font-semibold text-white hover:bg-slate-800"
     >
-      Connect Google (Gmail + Calendar)
+      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-bold text-brand-600">
+        G
+      </span>
+      Continue with Google
     </button>
   );
 }
 
-export function SignOutButton() {
+export function SignOutButton({
+  className = "text-sm text-slate-500 underline hover:text-slate-700",
+}: {
+  className?: string;
+}) {
   return (
-    <button
-      onClick={() => signOut()}
-      className="text-sm text-slate-500 underline hover:text-slate-700"
-    >
+    <button onClick={() => signOut()} className={className}>
       Sign out
     </button>
   );

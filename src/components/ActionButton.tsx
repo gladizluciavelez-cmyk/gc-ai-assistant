@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 export function ActionButton({
   label,
   endpoint,
+  variant = "primary",
 }: {
   label: string;
   endpoint: string;
+  variant?: "primary" | "secondary";
 }) {
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [message, setMessage] = useState("");
@@ -51,11 +53,15 @@ export function ActionButton({
   }
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex max-w-xs flex-col gap-1">
       <button
         onClick={run}
         disabled={status === "loading"}
-        className="rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+        className={`rounded-lg px-4 py-2.5 text-sm disabled:opacity-50 ${
+          variant === "primary"
+            ? "bg-brand-600 font-semibold text-white hover:bg-brand-700"
+            : "border border-slate-300 bg-white font-medium text-slate-900 hover:bg-slate-50"
+        }`}
       >
         {status === "loading" ? "Running…" : label}
       </button>

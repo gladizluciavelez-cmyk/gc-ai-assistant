@@ -36,9 +36,13 @@ export function AssignProjectSelect({
       value={value}
       disabled={saving}
       onChange={(e) => onChange(e.target.value)}
-      className="mt-1 w-full max-w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+      className={`w-full max-w-full rounded-md border px-2 py-1.5 text-xs font-medium ${
+        value
+          ? "border-blue-100 bg-brand-50 text-brand-700"
+          : "border-dashed border-slate-300 bg-white text-slate-500"
+      }`}
     >
-      <option value="">Unassigned</option>
+      <option value="">Assign project…</option>
       {projects.map((p) => (
         <option key={p.id} value={p.id}>
           {p.name}

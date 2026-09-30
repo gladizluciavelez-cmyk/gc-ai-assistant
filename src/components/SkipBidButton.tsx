@@ -57,19 +57,20 @@ export function SkipBidButton({
     return (
       <button
         onClick={() => setOpen(true)}
-        className="rounded-md border border-brand-600 px-3 py-1.5 text-sm font-medium text-brand-600 hover:bg-brand-50"
+        className="flex-1 rounded-lg border border-brand-600 bg-white px-4 py-2.5 text-sm font-semibold text-brand-600 hover:bg-brand-50"
       >
-        Skip / Not placing bid
+        Skip
       </button>
     );
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-1 flex-wrap items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5">
+      <span className="text-xs font-medium text-slate-500">Why skip?</span>
       <select
         value={reason}
         onChange={(e) => setReason(e.target.value)}
-        className="rounded-md border border-slate-300 px-2 py-0.5 text-xs"
+        className="rounded-md border border-slate-300 px-2 py-1 text-xs"
       >
         {SKIP_REASONS.map((r) => (
           <option key={r} value={r}>
