@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getOrgContext } from "@/lib/org";
 import { prisma } from "@/lib/prisma";
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
+  const ctx = await getOrgContext();
+  if (!ctx) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+  const { orgId } = ctx;
+
+  const owned = await prisma.project.findFirst({ where: { id: params.id, orgId }, select: { id: true } });
+  if (!owned) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const body = await req.json();
@@ -35,8 +40,9 @@ export async function PATCH(
   // projects list with a status no one checks.
   if (status === "NOT_AWARDED") {
     await prisma.bidDecisionLog.upsert({
-      where: { sourceType_sourceId: { sourceType: "project", sourceId: project.id } },
+      where: { orgId_sourceType_sourceId: { orgId, sourceType: "project", sourceId: project.id } },
       create: {
+        orgId,
         sourceType: "project",
         sourceId: project.id,
         decision: "NOT_AWARDED",

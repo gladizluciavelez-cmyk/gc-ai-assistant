@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getOrgContext } from "@/lib/org";
 import { prisma } from "@/lib/prisma";
 import { detectTrade } from "@/lib/bid-tags";
 
@@ -13,18 +12,20 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
+  const ctx = await getOrgContext();
+  if (!ctx) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
+  const { orgId } = ctx;
 
-  const email = await prisma.emailRecord.findUnique({ where: { id: params.id } });
+  const email = await prisma.emailRecord.findFirst({ where: { id: params.id, orgId } });
   if (!email) {
     return NextResponse.json({ error: "Email not found" }, { status: 404 });
   }
 
   const project = await prisma.project.create({
     data: {
+      orgId,
       name: email.subject,
       client: email.from,
       projectType: detectTrade(`${email.subject} ${email.summary ?? ""}`),

@@ -1,24 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getOrgContext } from "@/lib/org";
 import { prisma } from "@/lib/prisma";
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
+  const ctx = await getOrgContext();
+  if (!ctx) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
+  const { orgId } = ctx;
 
   const body = await req.json();
   const { status } = body as { status: "TODO" | "DONE" | "DISMISSED" };
 
-  const task = await prisma.taskItem.update({
-    where: { id: params.id },
+  const result = await prisma.taskItem.updateMany({
+    where: { id: params.id, orgId },
     data: { status },
   });
+  if (result.count === 0) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
-  return NextResponse.json({ ok: true, task });
+  return NextResponse.json({ ok: true });
 }

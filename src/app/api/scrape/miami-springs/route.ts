@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import * as cheerio from "cheerio";
 import { prisma } from "@/lib/prisma";
 import { classifyProjectType } from "@/lib/bid-classify";
-import { browserHeaders } from "@/lib/scrape-fetch";
+import { browserHeaders, blockInfo } from "@/lib/scrape-fetch";
 
 export const maxDuration = 60;
 
@@ -24,7 +24,7 @@ export async function POST() {
 
     if (!res.ok) {
       return NextResponse.json(
-        { error: `Fetch failed: ${res.status} ${res.statusText}` },
+        { error: `Fetch failed: ${res.status} ${res.statusText}${await blockInfo(res)}` },
         { status: 502 }
       );
     }

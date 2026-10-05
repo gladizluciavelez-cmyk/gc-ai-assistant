@@ -164,6 +164,12 @@ const BID_CONFIRMATION_PHRASES = [
 export function detectMunicipality(text: string): string | null {
   const lower = text.toLowerCase();
   for (const { match, label } of MUNICIPALITIES) {
+    // "City of Miami" is a prefix of "City of Miami Beach/Springs/Shores/..."
+    // — only count it when it isn't followed by another place-name word.
+    if (match === "City of Miami") {
+      if (/city of miami(?!\s+(beach|springs|shores|lakes|gardens)\b|-)/.test(lower)) return label;
+      continue;
+    }
     if (lower.includes(match.toLowerCase())) return label;
   }
   return null;

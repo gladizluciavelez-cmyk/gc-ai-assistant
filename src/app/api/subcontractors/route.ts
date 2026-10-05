@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getOrgContext } from "@/lib/org";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
+  const ctx = await getOrgContext();
+  if (!ctx) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
+  const { orgId } = ctx;
 
   const body = await req.json();
   const { name, trade, email, phone, projectId } = body as {
@@ -22,8 +22,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
 
+  if (projectId) {
+    const project = await prisma.project.findFirst({ where: { id: projectId, orgId }, select: { id: true } });
+    if (!project) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+  }
+
   const sub = await prisma.subcontractor.create({
     data: {
+      orgId,
       name,
       trade,
       email,

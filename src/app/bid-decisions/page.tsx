@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getOrgContext } from "@/lib/org";
 import { AppShell } from "@/components/AppShell";
 import { SignInScreen } from "@/components/SignInScreen";
 import { Card, Empty, PageHeader, Tag } from "@/components/ui";
@@ -46,8 +47,12 @@ export default async function BidDecisionsPage({
 }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return <SignInScreen />;
+  const ctx = await getOrgContext();
+  if (!ctx) return <SignInScreen />;
+  const { orgId } = ctx;
 
   const allLogs = await prisma.bidDecisionLog.findMany({
+    where: { orgId },
     orderBy: { createdAt: "desc" },
   });
 
@@ -59,7 +64,7 @@ export default async function BidDecisionsPage({
     .map((d) => d.sourceId);
   const lostProjects = lostProjectIds.length
     ? await prisma.project.findMany({
-        where: { id: { in: lostProjectIds } },
+        where: { orgId, id: { in: lostProjectIds } },
         select: { id: true, name: true, client: true, address: true },
       })
     : [];

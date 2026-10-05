@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getOrgContext } from "@/lib/org";
 import { prisma } from "@/lib/prisma";
 import { anthropic, CLAUDE_MODEL } from "@/lib/anthropic";
 
@@ -22,14 +21,24 @@ interface PlanTask {
  * dashboard can just query planDate = today.
  */
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
+  // Two callers: a signed-in user (their own org), or the daily cron, which
+  // authenticates with CRON_SECRET and passes ?orgId= for the org to plan for.
   const url = new URL(req.url);
-  const userId = session?.user
-    ? (session.user as { id: string }).id
-    : url.searchParams.get("userId");
+  const cronOrgId = url.searchParams.get("orgId");
+  const isCron =
+    Boolean(cronOrgId) &&
+    Boolean(process.env.CRON_SECRET) &&
+    req.headers.get("authorization") === `Bearer ${process.env.CRON_SECRET}`;
 
-  if (!userId) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  let orgId: string;
+  if (isCron) {
+    orgId = cronOrgId!;
+  } else {
+    const ctx = await getOrgContext();
+    if (!ctx) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
+    orgId = ctx.orgId;
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -39,6 +48,7 @@ export async function POST(req: NextRequest) {
   const [emails, permits, upcomingBids, openTasks] = await Promise.all([
     prisma.emailRecord.findMany({
       where: {
+        orgId,
         receivedAt: { gte: twoDaysAgo },
         OR: [{ requiresReply: true }, { NOT: { actionItem: null } }],
       },
@@ -46,16 +56,18 @@ export async function POST(req: NextRequest) {
       take: 20,
     }),
     prisma.permit.findMany({
-      where: { status: { in: ["SUBMITTED", "UNDER_REVIEW", "NOT_SUBMITTED"] } },
+      where: { project: { orgId }, status: { in: ["SUBMITTED", "UNDER_REVIEW", "NOT_SUBMITTED"] } },
       include: { project: true },
       take: 20,
     }),
-    prisma.bid.findMany({
-      where: { preBidMeetingAt: { gte: new Date(), lte: weekOut } },
+    // Pre-bid meetings this org has recorded (entered by hand or scraped).
+    prisma.bidOverride.findMany({
+      where: { orgId, preBidMeetingAt: { gte: new Date(), lte: weekOut } },
+      include: { bid: true },
       take: 10,
     }),
     prisma.taskItem.findMany({
-      where: { status: "TODO" },
+      where: { orgId, status: "TODO" },
       take: 20,
     }),
   ]);
@@ -80,8 +92,8 @@ export async function POST(req: NextRequest) {
         project: p.project?.name,
       })),
       upcomingPreBidMeetings: upcomingBids.map((b) => ({
-        title: b.title,
-        agency: b.agency,
+        title: b.title ?? b.bid.title,
+        agency: b.agency ?? b.bid.agency,
         preBidMeetingAt: b.preBidMeetingAt,
       })),
       alreadyOpenTasks: openTasks.map((t) => t.title),
@@ -146,6 +158,7 @@ Keep it to at most 8 tasks, most urgent first.`,
     planTasks.map((t) =>
       prisma.taskItem.create({
         data: {
+          orgId,
           title: t.title,
           description: t.description,
           source: "email",

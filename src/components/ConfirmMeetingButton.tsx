@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 
 export function ConfirmMeetingButton({
   emailId,
+  bidId,
   title,
   startISO,
   location,
 }: {
-  emailId: string;
+  emailId?: string;
+  bidId?: string;
   title: string;
   startISO: string;
   location?: string | null;
@@ -30,6 +32,7 @@ export function ConfirmMeetingButton({
           startISO,
           location: location ?? undefined,
           emailId,
+          bidId,
         }),
       });
       const data = await res.json();

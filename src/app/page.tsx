@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getOrgContext } from "@/lib/org";
 import { AppShell } from "@/components/AppShell";
 import { SignInScreen } from "@/components/SignInScreen";
 import { SyncControls } from "@/components/SyncControls";
@@ -9,7 +10,6 @@ import { AssignProjectSelect } from "@/components/AssignProjectSelect";
 import { TaskCheckbox } from "@/components/TaskCheckbox";
 import { ConfirmMeetingButton } from "@/components/ConfirmMeetingButton";
 import {
-  COMPANY_NAME,
   Card,
   EMAIL_CATEGORY,
   Empty,
@@ -46,6 +46,9 @@ export default async function DashboardPage({
 }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return <SignInScreen />;
+  const ctx = await getOrgContext();
+  if (!ctx) return <SignInScreen />;
+  const { orgId } = ctx;
 
   const today = new Date().toISOString().slice(0, 10);
   const now = new Date();
@@ -60,6 +63,8 @@ export default async function DashboardPage({
       ? { category: { notIn: ["BID_INVITE" as const, "SCHEDULING" as const] } }
       : {};
 
+  const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } });
+
   const [
     todayTasks,
     allRecentEmails,
@@ -73,34 +78,34 @@ export default async function DashboardPage({
     lastEmail,
   ] = await Promise.all([
     prisma.taskItem.findMany({
-      where: { planDate: today, status: "TODO" },
+      where: { orgId, planDate: today, status: "TODO" },
       orderBy: { createdAt: "asc" },
       include: { email: { select: { gmailId: true, from: true } } },
     }),
     prisma.emailRecord.findMany({
-      where: categoryFilter,
+      where: { orgId, ...categoryFilter },
       orderBy: { receivedAt: "desc" },
       take: EMAILS_TOTAL,
     }),
-    prisma.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.project.findMany({ where: { orgId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.emailRecord.findMany({
-      where: { meetingAt: { not: null }, addedToCalendar: false },
+      where: { orgId, meetingAt: { not: null }, addedToCalendar: false },
       orderBy: { meetingAt: "asc" },
     }),
-    prisma.bid.findMany({ where: { project: null }, select: { id: true } }),
+    prisma.bid.findMany({ where: { projects: { none: { orgId } } }, select: { id: true } }),
     prisma.emailRecord.findMany({
-      where: { category: "BID_INVITE", project: null },
+      where: { orgId, category: "BID_INVITE", project: null },
       select: { id: true },
     }),
-    prisma.bidDecisionLog.findMany({ select: { sourceType: true, sourceId: true } }),
+    prisma.bidDecisionLog.findMany({ where: { orgId }, select: { sourceType: true, sourceId: true } }),
     // Bids we've placed that are still waiting on an award decision.
-    prisma.project.count({ where: { status: "BIDDING" } }),
+    prisma.project.count({ where: { orgId, status: "BIDDING" } }),
     prisma.emailRecord.findMany({
-      where: { meetingAt: { gte: now, lte: weekOut } },
+      where: { orgId, meetingAt: { gte: now, lte: weekOut } },
       orderBy: { meetingAt: "asc" },
       select: { meetingAt: true, meetingTitle: true, subject: true },
     }),
-    prisma.emailRecord.findFirst({ orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+    prisma.emailRecord.findFirst({ where: { orgId }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
   ]);
 
   const decided = new Set(decisions.map((d) => `${d.sourceType}-${d.sourceId}`));
@@ -129,7 +134,7 @@ export default async function DashboardPage({
   return (
     <AppShell user={session.user}>
       <PageHeader
-        eyebrow={COMPANY_NAME}
+        eyebrow={org?.name ?? "Your company"}
         title="Email Tracking"
         subtitle={
           <>

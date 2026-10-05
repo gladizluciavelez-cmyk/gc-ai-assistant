@@ -10,6 +10,50 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// --- Tenancy ---
+// Every customer company is one Organization. Users belong to one org; all
+// customer-owned data (projects, emails, tasks, decisions, ...) carries an
+// orgId and every query must filter by it. Scraped Bid rows are public data
+// and stay global; an org's private edits to a bid live in BidOverride.
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  users          User[]
+  projects       Project[]
+  subcontractors Subcontractor[]
+  emails         EmailRecord[]
+  tasks          TaskItem[]
+  decisions      BidDecisionLog[]
+  bidOverrides   BidOverride[]
+  invites        Invite[]
+}
+
+enum OrgRole {
+  OWNER
+  MEMBER
+}
+
+// Pending/accepted invitation to join an Organization. Single-use: the token
+// is the secret in the invite link and is consumed when accepted.
+model Invite {
+  id           String       @id @default(cuid())
+  orgId        String
+  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  email        String? // if set, only this Google account can accept
+  token        String       @unique
+  role         OrgRole      @default(MEMBER)
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  acceptedById String?
+  createdById  String
+  createdAt    DateTime     @default(now())
+
+  @@index([orgId])
+}
+
 // --- Auth (NextAuth / Prisma adapter) ---
 
 model User {
@@ -25,7 +69,13 @@ model User {
   // whether the user has granted Gmail + Calendar scopes at least once.
   googleConnected Boolean @default(false)
 
+  orgId String?
+  org   Organization? @relation(fields: [orgId], references: [id])
+  role  OrgRole        @default(MEMBER)
+
   createdAt DateTime @default(now())
+
+  @@index([orgId])
 }
 
 model Account {
@@ -84,10 +134,16 @@ model Project {
   tasks          TaskItem[]
   permits        Permit[]
   bid            Bid?                   @relation(fields: [bidId], references: [id])
-  bidId          String?                @unique
+  bidId          String?
+
+  orgId String?
+  org   Organization? @relation(fields: [orgId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([orgId, bidId])
+  @@index([orgId])
 }
 
 model Subcontractor {
@@ -99,7 +155,12 @@ model Subcontractor {
 
   projects ProjectSubcontractor[]
 
+  orgId String?
+  org   Organization? @relation(fields: [orgId], references: [id])
+
   createdAt DateTime @default(now())
+
+  @@index([orgId])
 }
 
 model ProjectSubcontractor {
@@ -174,13 +235,19 @@ model EmailRecord {
   bidAgencyShort   String? // short/abbreviated agency name, e.g. "CFE Authority"
   bidSummary       String? // 1-3 word project description, e.g. "Safety Improvements"
   bidAddress       String? // physical address, or "Multiple addresses", or null
+  bidMunicipality  String? // manual override of keyword-detected municipality
 
   project   Project? @relation(fields: [projectId], references: [id])
   projectId String?
 
   tasks TaskItem[]
 
+  orgId String?
+  org   Organization? @relation(fields: [orgId], references: [id])
+
   createdAt DateTime @default(now())
+
+  @@index([orgId])
 }
 
 enum BidDecisionType {
@@ -204,9 +271,13 @@ model BidDecisionLog {
   municipality String?
   trade        String?
 
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id])
+
   createdAt DateTime @default(now())
 
-  @@unique([sourceType, sourceId])
+  @@unique([orgId, sourceType, sourceId])
+  @@index([orgId])
 }
 
 enum TaskStatus {
@@ -234,8 +305,13 @@ model TaskItem {
   // Which day's generated plan this belongs to (YYYY-MM-DD), for grouping.
   planDate String?
 
+  orgId String?
+  org   Organization? @relation(fields: [orgId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([orgId])
 }
 
 enum BidSource {
@@ -270,9 +346,35 @@ model Bid {
   rawText         String?   @db.Text
   addedToCalendar Boolean   @default(false)
 
-  project Project?
+  projects  Project[]
+  overrides BidOverride[]
 
   createdAt DateTime @default(now())
 
   @@unique([source, externalId])
+}
+
+// One org's private edits to a (shared, scraped) Bid — e.g. the address or
+// pre-bid meeting the scraper couldn't capture. Null fields fall back to the
+// scraped value on the Bid itself.
+model BidOverride {
+  id    String       @id @default(cuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id])
+  bidId String
+  bid   Bid          @relation(fields: [bidId], references: [id], onDelete: Cascade)
+
+  title                String?
+  agency               String?
+  municipality         String?
+  address              String?
+  projectType          String?
+  openingDate          DateTime?
+  preBidMeetingAt      DateTime?
+  preBidMeetingAddress String?
+  addedToCalendar      Boolean   @default(false)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, bidId])
 }

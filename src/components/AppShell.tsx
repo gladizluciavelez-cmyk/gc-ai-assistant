@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { SidebarNav } from "@/components/SidebarNav";
 import { SignOutButton } from "@/components/AuthButton";
-import { COMPANY_NAME } from "@/components/ui";
+import { getOrgContext } from "@/lib/org";
+import { prisma } from "@/lib/prisma";
 
 function initials(nameOrEmail: string) {
   const parts = nameOrEmail.split(/[\s@.]+/).filter(Boolean);
@@ -12,7 +13,7 @@ function initials(nameOrEmail: string) {
  * Dark left sidebar + main content column used by every signed-in page.
  * Collapses to a top bar with horizontally-scrolling nav below `lg`.
  */
-export function AppShell({
+export async function AppShell({
   user,
   children,
 }: {
@@ -20,6 +21,10 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const display = user?.name ?? user?.email ?? "";
+  const ctx = await getOrgContext();
+  const org = ctx
+    ? await prisma.organization.findUnique({ where: { id: ctx.orgId }, select: { name: true } })
+    : null;
   return (
     <div className="min-h-screen lg:flex">
       <aside className="flex flex-col gap-5 bg-slate-900 px-4 py-4 lg:sticky lg:top-0 lg:h-screen lg:w-64 lg:shrink-0 lg:gap-7 lg:px-5 lg:py-7">
@@ -31,7 +36,7 @@ export function AppShell({
         </Link>
 
         <div className="hidden rounded-lg bg-slate-800 px-3 py-2.5 lg:block">
-          <p className="text-[13px] font-semibold leading-snug text-white">{COMPANY_NAME}</p>
+          <p className="text-[13px] font-semibold leading-snug text-white">{org?.name ?? "Your company"}</p>
           <p className="mt-0.5 text-xs text-slate-400">South Florida · Pilot</p>
         </div>
 

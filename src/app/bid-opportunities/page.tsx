@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getOrgContext } from "@/lib/org";
 import { AppShell } from "@/components/AppShell";
 import { SignInScreen } from "@/components/SignInScreen";
 import { ActionButton } from "@/components/ActionButton";
@@ -11,6 +12,7 @@ import { ConvertEmailButton } from "@/components/ConvertEmailButton";
 import { ConfirmMeetingButton } from "@/components/ConfirmMeetingButton";
 import { SkipBidButton } from "@/components/SkipBidButton";
 import { DismissBidButton } from "@/components/DismissBidButton";
+import { EditBidButton } from "@/components/EditBidButton";
 import { COVERED_SOURCES, Empty, PageHeader, Tag, gmailLink, shortDate } from "@/components/ui";
 import { detectMunicipality, detectTrade, isBidConfirmation } from "@/lib/bid-tags";
 
@@ -25,23 +27,29 @@ export default async function BidOpportunitiesPage({
 }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return <SignInScreen />;
+  const ctx = await getOrgContext();
+  if (!ctx) return <SignInScreen />;
+  const { orgId } = ctx;
 
-  const [recentBids, bidInviteEmails, projects, recentDecisions] = await Promise.all([
+  const [recentBids, bidInviteEmails, projects, recentDecisions, overrides] = await Promise.all([
     prisma.bid.findMany({
       orderBy: { createdAt: "desc" },
       take: 10,
-      where: { project: null },
+      where: { projects: { none: { orgId } } },
     }),
     prisma.emailRecord.findMany({
-      where: { category: "BID_INVITE", project: null },
+      where: { orgId, category: "BID_INVITE", project: null },
       orderBy: { receivedAt: "desc" },
       take: 10,
     }),
-    prisma.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.project.findMany({ where: { orgId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     // Any Skip/Placed decision already made — used to drop that opportunity
     // out of the feed below rather than leaving it dangling after a decision.
-    prisma.bidDecisionLog.findMany({ select: { sourceType: true, sourceId: true } }),
+    prisma.bidDecisionLog.findMany({ where: { orgId }, select: { sourceType: true, sourceId: true } }),
+    // This org's private edits to the shared scraped bids.
+    prisma.bidOverride.findMany({ where: { orgId } }),
   ]);
+  const overrideByBid = new Map(overrides.map((o) => [o.bidId, o]));
 
   const decidedKeys = new Set(recentDecisions.map((d) => `${d.sourceType}-${d.sourceId}`));
 
@@ -60,8 +68,11 @@ export default async function BidOpportunitiesPage({
     meetingAddress: string | null;
     municipality: string | null;
     trade: string | null;
+    // Raw (unjoined) values used to pre-fill the Edit form.
+    rawAgency: string | null;
+    projectNumber: string | null;
   } & (
-    | { kind: "bid"; url: string | null; bidId: string }
+    | { kind: "bid"; url: string | null; bidId: string; addedToCalendar: boolean }
     | { kind: "email"; gmailId: string; emailId: string; addedToCalendar: boolean }
   );
 
@@ -69,22 +80,30 @@ export default async function BidOpportunitiesPage({
     ...recentBids
       .filter((b) => !decidedKeys.has(`bid-${b.id}`))
       .map((b): BidOpportunity => {
-        const text = `${b.title} ${b.agency ?? ""} ${b.projectType ?? ""}`;
+        const o = overrideByBid.get(b.id);
+        const title = o?.title ?? b.title;
+        const agencyName = o?.agency ?? b.agency;
+        const scope = o?.projectType ?? b.projectType;
+        const text = `${title} ${agencyName ?? ""} ${scope ?? ""}`;
         return {
           kind: "bid",
           id: `bid-${b.id}`,
           date: b.createdAt,
-          title: b.title,
-          agency: [b.agency, b.externalId].filter(Boolean).join(" · ") || null,
-          address: null,
-          scope: b.projectType ?? null,
-          dueAt: b.openingDate,
+          title,
+          agency: [agencyName, b.externalId].filter(Boolean).join(" · ") || null,
+          address: o?.address ?? null,
+          scope: scope ?? null,
+          dueAt: o?.openingDate ?? b.openingDate,
           meetingTitle: null,
-          meetingAt: b.preBidMeetingAt,
-          meetingAddress: null,
+          meetingAt: o?.preBidMeetingAt ?? b.preBidMeetingAt,
+          meetingAddress: o?.preBidMeetingAddress ?? null,
           url: b.url,
           bidId: b.id,
-          municipality: (b.agency && detectMunicipality(b.agency)) ?? detectMunicipality(text),
+          addedToCalendar: o?.addedToCalendar ?? b.addedToCalendar,
+          rawAgency: agencyName ?? null,
+          projectNumber: null,
+          municipality:
+            o?.municipality ?? (agencyName && detectMunicipality(agencyName)) ?? detectMunicipality(text),
           trade: detectTrade(text),
         };
       }),
@@ -117,7 +136,9 @@ export default async function BidOpportunitiesPage({
           gmailId: e.gmailId,
           emailId: e.id,
           addedToCalendar: e.addedToCalendar,
-          municipality: detectMunicipality(text),
+          rawAgency: e.bidAgencyShort ?? null,
+          projectNumber: e.bidProjectNumber ?? null,
+          municipality: e.bidMunicipality ?? detectMunicipality(text),
           trade: detectTrade(text),
         };
       }),
@@ -233,7 +254,7 @@ export default async function BidOpportunitiesPage({
               .filter(Boolean)
               .join(" · ");
             const canConfirmMeeting =
-              o.kind === "email" && o.meetingAt && !o.addedToCalendar && o.meetingAt > new Date();
+              o.meetingAt && !o.addedToCalendar && o.meetingAt > new Date();
             const details: [string, string | null][] = [
               ["Municipality", o.municipality],
               ["Address", o.address],
@@ -282,24 +303,43 @@ export default async function BidOpportunitiesPage({
                   ))}
                 </dl>
 
-                {canConfirmMeeting && o.kind === "email" && (
+                {canConfirmMeeting && o.meetingAt && (
                   <div className="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center">
                     <div className="flex-1">
                       <p className="text-[13px] font-semibold text-amber-900">
                         Pre-bid meeting detected
                       </p>
                       <p className="text-xs text-amber-700">
-                        Date, time and location found in the email text
+                        {o.kind === "email"
+                          ? "Date, time and location found in the email text"
+                          : "From the meeting details you entered"}
                       </p>
                     </div>
                     <ConfirmMeetingButton
-                      emailId={o.emailId}
+                      emailId={o.kind === "email" ? o.emailId : undefined}
+                      bidId={o.kind === "bid" ? o.bidId : undefined}
                       title={o.meetingTitle ?? o.title}
-                      startISO={o.meetingAt!.toISOString()}
+                      startISO={o.meetingAt.toISOString()}
                       location={o.meetingAddress}
                     />
                   </div>
                 )}
+
+                <EditBidButton
+                  kind={o.kind}
+                  id={o.kind === "bid" ? o.bidId : o.emailId}
+                  initial={{
+                    title: o.kind === "bid" ? o.title : null,
+                    projectNumber: o.projectNumber,
+                    agency: o.rawAgency,
+                    municipality: o.municipality,
+                    address: o.address,
+                    scope: o.scope,
+                    dueISO: o.dueAt ? o.dueAt.toISOString() : null,
+                    meetingISO: o.meetingAt ? o.meetingAt.toISOString() : null,
+                    meetingAddress: o.meetingAddress,
+                  }}
+                />
 
                 {o.kind === "email" && (
                   <div>

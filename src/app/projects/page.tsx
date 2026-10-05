@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getOrgContext } from "@/lib/org";
 import { AppShell } from "@/components/AppShell";
 import { SignInScreen } from "@/components/SignInScreen";
 import { NewProjectForm } from "@/components/NewProjectForm";
@@ -21,14 +22,18 @@ const TABS = [
 export default async function ProjectsPage({ searchParams }: { searchParams: { status?: string } }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return <SignInScreen />;
+  const ctx = await getOrgContext();
+  if (!ctx) return <SignInScreen />;
+  const { orgId } = ctx;
 
   const [projects, openPermits] = await Promise.all([
     prisma.project.findMany({
+      where: { orgId },
       orderBy: { updatedAt: "desc" },
       include: { permits: true, subcontractors: true, _count: { select: { emails: true } } },
     }),
     prisma.permit.findMany({
-      where: { status: { not: "APPROVED" } },
+      where: { project: { orgId }, status: { not: "APPROVED" } },
       include: { project: true },
       take: 10,
     }),

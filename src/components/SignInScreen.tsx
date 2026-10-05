@@ -1,5 +1,4 @@
 import { SignInButton } from "@/components/AuthButton";
-import { COMPANY_NAME } from "@/components/ui";
 
 const FEATURES = [
   ["Inbox triage", "Emails sorted into bids, meetings, permits and subs"],
@@ -17,7 +16,7 @@ export function SignInScreen() {
           </span>
           <div>
             <p className="text-xl font-bold">GC Assistant</p>
-            <p className="text-xs text-slate-500">{COMPANY_NAME}</p>
+            <p className="text-xs text-slate-500">Bid tracking for contractors</p>
           </div>
         </div>
 

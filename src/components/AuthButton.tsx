@@ -2,10 +2,10 @@
 
 import { signIn, signOut } from "next-auth/react";
 
-export function SignInButton() {
+export function SignInButton({ callbackUrl }: { callbackUrl?: string }) {
   return (
     <button
-      onClick={() => signIn("google")}
+      onClick={() => signIn("google", callbackUrl ? { callbackUrl } : undefined)}
       className="flex w-full items-center justify-center gap-2.5 rounded-lg bg-slate-900 px-4 py-3 text-[15px] font-semibold text-white hover:bg-slate-800"
     >
       <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-bold text-brand-600">

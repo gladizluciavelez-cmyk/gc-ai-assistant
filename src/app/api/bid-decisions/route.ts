@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getOrgContext } from "@/lib/org";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -10,10 +9,11 @@ import { prisma } from "@/lib/prisma";
  * the previous decision rather than duplicating rows.
  */
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
+  const ctx = await getOrgContext();
+  if (!ctx) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
+  const { orgId } = ctx;
 
   const body = await req.json();
   const { sourceType, sourceId, decision, reason, title, municipality, trade } = body as {
@@ -31,8 +31,9 @@ export async function POST(req: NextRequest) {
   }
 
   const log = await prisma.bidDecisionLog.upsert({
-    where: { sourceType_sourceId: { sourceType, sourceId } },
+    where: { orgId_sourceType_sourceId: { orgId, sourceType, sourceId } },
     create: {
+      orgId,
       sourceType,
       sourceId,
       decision,

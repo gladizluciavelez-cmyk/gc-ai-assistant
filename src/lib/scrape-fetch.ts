@@ -12,6 +12,28 @@
  * WAF, but resolves the plain "your client doesn't look like a browser"
  * class of block.
  */
+/**
+ * Diagnostic suffix for failed fetches: reveals which WAF/CDN is blocking
+ * (e.g. "server=cloudflare cf-ray=...", "server=AkamaiGHost", "x-iinfo" for
+ * Imperva) so we know whether a header tweak can help or the host's IP range
+ * (Vercel = datacenter) is simply being denied.
+ */
+export async function blockInfo(res: Response): Promise<string> {
+  const h = (k: string) => res.headers.get(k);
+  const parts = [
+    h("server") && `server=${h("server")}`,
+    h("cf-ray") && `cf-ray=${h("cf-ray")}`,
+    h("x-iinfo") && "imperva",
+    h("x-akamai-request-id") && "akamai",
+    h("x-vercel-id") && `vercel=${h("x-vercel-id")}`,
+  ].filter(Boolean);
+  let body = "";
+  try {
+    body = (await res.text()).replace(/\s+/g, " ").slice(0, 160);
+  } catch {}
+  return ` [${parts.join(" ")}] ${body}`;
+}
+
 export function browserHeaders(extra?: Record<string, string>): Record<string, string> {
   return {
     "User-Agent":

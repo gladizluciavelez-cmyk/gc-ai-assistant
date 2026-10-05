@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getOrgContext } from "@/lib/org";
 import { AppShell } from "@/components/AppShell";
 import { SignInScreen } from "@/components/SignInScreen";
 import { InlineSelect } from "@/components/InlineSelect";
@@ -47,9 +48,12 @@ const fmtDay = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day:
 export default async function ProjectDetailPage({ params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return <SignInScreen />;
+  const ctx = await getOrgContext();
+  if (!ctx) return <SignInScreen />;
+  const { orgId } = ctx;
 
-  const project = await prisma.project.findUnique({
-    where: { id: params.id },
+  const project = await prisma.project.findFirst({
+    where: { id: params.id, orgId },
     include: {
       permits: true,
       subcontractors: { include: { subcontractor: true } },
@@ -62,6 +66,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
 
   const decisions = await prisma.bidDecisionLog.findMany({
     where: {
+      orgId,
       OR: [
         { sourceType: "project", sourceId: project.id },
         ...(project.bid ? [{ sourceType: "bid", sourceId: project.bid.id }] : []),

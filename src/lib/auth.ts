@@ -2,6 +2,7 @@ import { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
+import { createSoloOrg } from "@/lib/org-create";
 
 // Scopes needed:
 // - gmail.readonly: read the GC's inbox to parse subcontractor/permit/bid emails
@@ -33,6 +34,13 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   session: { strategy: "database" },
+  events: {
+    // Every new sign-up becomes the owner of their own organization, so their
+    // data is isolated from every other customer's.
+    async createUser({ user }) {
+      await createSoloOrg(user.id, user.name, user.email);
+    },
+  },
   callbacks: {
     // IMPORTANT: NextAuth's Prisma adapter only writes tokens to the Account
     // table the very first time an account links. On every later sign-in,

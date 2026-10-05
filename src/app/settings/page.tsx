@@ -2,9 +2,11 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getOrgContext } from "@/lib/org";
 import { AppShell } from "@/components/AppShell";
 import { SignInScreen } from "@/components/SignInScreen";
-import { COMPANY_NAME, COVERED_SOURCES, Card, PageHeader, Tag, shortDate } from "@/components/ui";
+import { InviteForm, RemoveMemberButton, RevokeInviteButton } from "@/components/TeamControls";
+import { COVERED_SOURCES, Card, PageHeader, Tag, shortDate } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -18,13 +20,27 @@ function initials(s: string) {
 export default async function SettingsPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user) return <SignInScreen />;
+  const ctx = await getOrgContext();
+  if (!ctx) return <SignInScreen />;
+  const { orgId } = ctx;
 
+  const owner = ctx.role === "OWNER";
+  const [org, invites] = await Promise.all([
+    prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } }),
+    owner
+      ? prisma.invite.findMany({
+          where: { orgId, acceptedAt: null, expiresAt: { gt: new Date() } },
+          orderBy: { createdAt: "desc" },
+        })
+      : Promise.resolve([]),
+  ]);
   const [users, lastEmail] = await Promise.all([
     prisma.user.findMany({
+      where: { orgId },
       orderBy: { createdAt: "asc" },
       include: { accounts: { where: { provider: "google" }, select: { refresh_token: true } } },
     }),
-    prisma.emailRecord.findFirst({ orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+    prisma.emailRecord.findFirst({ where: { orgId }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
   ]);
 
   const connected = (u: (typeof users)[number]) =>
@@ -35,26 +51,34 @@ export default async function SettingsPage() {
   return (
     <AppShell user={session.user}>
       <PageHeader
-        eyebrow={COMPANY_NAME}
+        eyebrow={org?.name ?? "Your company"}
         title="Team & Settings"
         subtitle="Who has access, which inboxes are connected, and your plan"
-        actions={
-          <button
-            disabled
-            title="Coming soon"
-            className="cursor-not-allowed rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white opacity-60"
-          >
-            +  Invite teammate
-          </button>
-        }
       />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex flex-col gap-6">
           <Card
             title="Team members"
-            subtitle={`${users.length} member${users.length === 1 ? "" : "s"} · invites coming soon`}
+            subtitle={`${users.length} member${users.length === 1 ? "" : "s"} · ${owner ? "invite teammates below" : "ask an owner to invite people"}`}
           >
+            {owner && (
+              <div className="mb-4 border-b border-slate-100 pb-4">
+                <InviteForm />
+                {invites.length > 0 && (
+                  <ul className="mt-3 space-y-1">
+                    {invites.map((i) => (
+                      <li key={i.id} className="flex items-center gap-3 text-xs text-slate-600">
+                        <span className="flex-1 truncate">
+                          Pending: {i.email ?? "anyone with the link"} · expires {shortDate(i.expiresAt)}
+                        </span>
+                        <RevokeInviteButton id={i.id} />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
             <div className="hidden grid-cols-[minmax(0,1fr)_90px_220px] gap-4 border-b border-slate-200 px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 md:grid">
               <span>Member</span>
               <span>Role</span>
@@ -88,13 +112,18 @@ export default async function SettingsPage() {
                       </div>
                     </div>
                     <div>
-                      <Tag>Admin</Tag>
+                      <Tag>{u.role === "OWNER" ? "Owner" : "Member"}</Tag>
                     </div>
                     <p className="flex items-center gap-2 text-xs">
                       <span className={`h-2 w-2 rounded-full ${on ? "bg-green-600" : "bg-amber-500"}`} />
                       <span className={on ? "text-slate-700" : "font-medium text-amber-700"}>
                         {on ? "Connected" : "Not connected — sign in again"}
                       </span>
+                      {owner && u.id !== ctx.userId && (
+                        <span className="ml-auto">
+                          <RemoveMemberButton userId={u.id} label={label} />
+                        </span>
+                      )}
                     </p>
                   </li>
                 );

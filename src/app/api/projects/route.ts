@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getOrgContext } from "@/lib/org";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
+  const ctx = await getOrgContext();
+  if (!ctx) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
+  const { orgId } = ctx;
 
   const body = await req.json();
   const { name, client, address, projectType, status } = body as {
@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
 
   const project = await prisma.project.create({
     data: {
+      orgId,
       name,
       client,
       address,
