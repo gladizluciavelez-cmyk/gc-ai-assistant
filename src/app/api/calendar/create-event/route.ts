@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOrgContext } from "@/lib/org";
+import { emailVisibility } from "@/lib/visibility";
 import { getCalendarClient } from "@/lib/google";
 import { prisma } from "@/lib/prisma";
 
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
 
     if (emailId) {
       await prisma.emailRecord.updateMany({
-        where: { id: emailId, orgId },
+        where: { AND: [emailVisibility(ctx), { id: emailId }] },
         data: { addedToCalendar: true },
       });
     }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOrgContext } from "@/lib/org";
+import { emailVisibility } from "@/lib/visibility";
 import { prisma } from "@/lib/prisma";
 import { detectTrade } from "@/lib/bid-tags";
 
@@ -18,7 +19,7 @@ export async function POST(
   }
   const { orgId } = ctx;
 
-  const email = await prisma.emailRecord.findFirst({ where: { id: params.id, orgId } });
+  const email = await prisma.emailRecord.findFirst({ where: { AND: [emailVisibility(ctx), { id: params.id }] } });
   if (!email) {
     return NextResponse.json({ error: "Email not found" }, { status: 404 });
   }

@@ -73,6 +73,12 @@ model User {
   org   Organization? @relation(fields: [orgId], references: [id])
   role  OrgRole        @default(MEMBER)
 
+  // Mailbox attribution: emails synced from this user's Gmail, and the daily
+  // tasks generated for them. SetNull so deleting a user never deletes
+  // company data; their private rows are purged explicitly on removal.
+  emails EmailRecord[]
+  tasks  TaskItem[]
+
   createdAt DateTime @default(now())
 
   @@index([orgId])
@@ -245,9 +251,16 @@ model EmailRecord {
   orgId String?
   org   Organization? @relation(fields: [orgId], references: [id])
 
+  // Whose Gmail this was synced from. Drives privacy: only this user sees the
+  // email unless it is work-related (bid invite / meeting) or linked to a
+  // project. Null = synced before mailbox tracking existed (owner-visible).
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
 
   @@index([orgId])
+  @@index([userId])
 }
 
 enum BidDecisionType {
@@ -308,10 +321,16 @@ model TaskItem {
   orgId String?
   org   Organization? @relation(fields: [orgId], references: [id])
 
+  // Each person gets their own daily plan, built from their own mail plus
+  // shared work items. Null = created before per-user plans (owner-visible).
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([orgId])
+  @@index([userId])
 }
 
 enum BidSource {

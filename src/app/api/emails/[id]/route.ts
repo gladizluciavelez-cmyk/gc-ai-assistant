@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOrgContext } from "@/lib/org";
+import { emailVisibility } from "@/lib/visibility";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -20,7 +21,7 @@ export async function PATCH(
   const b = (await req.json()) as Record<string, string | null | undefined>;
   const text = (v: string | null | undefined) => (v?.trim() ? v.trim() : null);
 
-  const owned = await prisma.emailRecord.findFirst({ where: { id: params.id, orgId }, select: { id: true } });
+  const owned = await prisma.emailRecord.findFirst({ where: { AND: [emailVisibility(ctx), { id: params.id }] }, select: { id: true } });
   if (!owned) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

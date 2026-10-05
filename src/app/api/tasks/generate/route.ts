@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOrgContext } from "@/lib/org";
+import { getOrgContext, orgForUser, type OrgContext } from "@/lib/org";
+import { emailVisibility, taskVisibility } from "@/lib/visibility";
 import { prisma } from "@/lib/prisma";
 import { anthropic, CLAUDE_MODEL } from "@/lib/anthropic";
 
@@ -21,25 +22,22 @@ interface PlanTask {
  * dashboard can just query planDate = today.
  */
 export async function POST(req: NextRequest) {
-  // Two callers: a signed-in user (their own org), or the daily cron, which
-  // authenticates with CRON_SECRET and passes ?orgId= for the org to plan for.
+  // Two callers: a signed-in user (plans for themselves), or the daily cron,
+  // which authenticates with CRON_SECRET and passes ?userId= for whom to plan.
+  // Plans are personal: built from that person's own mail plus shared work
+  // items, and saved as that person's tasks.
   const url = new URL(req.url);
-  const cronOrgId = url.searchParams.get("orgId");
+  const cronUserId = url.searchParams.get("userId");
   const isCron =
-    Boolean(cronOrgId) &&
+    Boolean(cronUserId) &&
     Boolean(process.env.CRON_SECRET) &&
     req.headers.get("authorization") === `Bearer ${process.env.CRON_SECRET}`;
 
-  let orgId: string;
-  if (isCron) {
-    orgId = cronOrgId!;
-  } else {
-    const ctx = await getOrgContext();
-    if (!ctx) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-    }
-    orgId = ctx.orgId;
+  const ctx: OrgContext | null = isCron ? await orgForUser(cronUserId!) : await getOrgContext();
+  if (!ctx) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
+  const { orgId, userId } = ctx;
 
   const today = new Date().toISOString().slice(0, 10);
   const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
@@ -48,9 +46,13 @@ export async function POST(req: NextRequest) {
   const [emails, permits, upcomingBids, openTasks] = await Promise.all([
     prisma.emailRecord.findMany({
       where: {
-        orgId,
-        receivedAt: { gte: twoDaysAgo },
-        OR: [{ requiresReply: true }, { NOT: { actionItem: null } }],
+        AND: [
+          emailVisibility(ctx),
+          {
+            receivedAt: { gte: twoDaysAgo },
+            OR: [{ requiresReply: true }, { NOT: { actionItem: null } }],
+          },
+        ],
       },
       orderBy: { receivedAt: "desc" },
       take: 20,
@@ -67,7 +69,7 @@ export async function POST(req: NextRequest) {
       take: 10,
     }),
     prisma.taskItem.findMany({
-      where: { orgId, status: "TODO" },
+      where: { AND: [taskVisibility(ctx), { status: "TODO" }] },
       take: 20,
     }),
   ]);
@@ -159,6 +161,7 @@ Keep it to at most 8 tasks, most urgent first.`,
       prisma.taskItem.create({
         data: {
           orgId,
+          userId,
           title: t.title,
           description: t.description,
           source: "email",

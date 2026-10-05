@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOrgContext } from "@/lib/org";
+import { taskVisibility } from "@/lib/visibility";
 import { prisma } from "@/lib/prisma";
 
 export async function PATCH(
@@ -10,13 +11,12 @@ export async function PATCH(
   if (!ctx) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
-  const { orgId } = ctx;
 
   const body = await req.json();
   const { status } = body as { status: "TODO" | "DONE" | "DISMISSED" };
 
   const result = await prisma.taskItem.updateMany({
-    where: { id: params.id, orgId },
+    where: { id: params.id, ...taskVisibility(ctx) },
     data: { status },
   });
   if (result.count === 0) {

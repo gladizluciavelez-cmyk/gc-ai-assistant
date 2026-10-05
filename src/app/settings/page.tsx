@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/org";
+import { emailVisibility } from "@/lib/visibility";
 import { AppShell } from "@/components/AppShell";
 import { SignInScreen } from "@/components/SignInScreen";
 import { InviteForm, RemoveMemberButton, RevokeInviteButton } from "@/components/TeamControls";
@@ -40,7 +41,7 @@ export default async function SettingsPage() {
       orderBy: { createdAt: "asc" },
       include: { accounts: { where: { provider: "google" }, select: { refresh_token: true } } },
     }),
-    prisma.emailRecord.findFirst({ where: { orgId }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+    prisma.emailRecord.findFirst({ where: emailVisibility(ctx), orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
   ]);
 
   const connected = (u: (typeof users)[number]) =>

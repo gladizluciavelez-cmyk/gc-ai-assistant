@@ -100,7 +100,7 @@ export function RemoveMemberButton({ userId, label }: { userId: string; label: s
     <button
       disabled={busy}
       onClick={async () => {
-        if (!confirm(`Remove ${label} from this company? They keep their Google account but lose access to your data.`)) return;
+        if (!confirm(`Remove ${label} from this company? They lose access to company data, and their private emails and daily plan are deleted from it. Bid invites, meetings and project emails they synced stay with the company.`)) return;
         setBusy(true);
         await fetch(`/api/team/members/${userId}`, { method: "DELETE" });
         router.refresh();

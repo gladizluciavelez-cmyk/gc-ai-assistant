@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/org";
+import { emailVisibility, taskVisibility } from "@/lib/visibility";
 import { AppShell } from "@/components/AppShell";
 import { SignInScreen } from "@/components/SignInScreen";
 import { SyncControls } from "@/components/SyncControls";
@@ -78,18 +79,18 @@ export default async function DashboardPage({
     lastEmail,
   ] = await Promise.all([
     prisma.taskItem.findMany({
-      where: { orgId, planDate: today, status: "TODO" },
+      where: { AND: [taskVisibility(ctx), { planDate: today, status: "TODO" }] },
       orderBy: { createdAt: "asc" },
       include: { email: { select: { gmailId: true, from: true } } },
     }),
     prisma.emailRecord.findMany({
-      where: { orgId, ...categoryFilter },
+      where: { AND: [emailVisibility(ctx), categoryFilter] },
       orderBy: { receivedAt: "desc" },
       take: EMAILS_TOTAL,
     }),
     prisma.project.findMany({ where: { orgId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.emailRecord.findMany({
-      where: { orgId, meetingAt: { not: null }, addedToCalendar: false },
+      where: { AND: [emailVisibility(ctx), { meetingAt: { not: null }, addedToCalendar: false }] },
       orderBy: { meetingAt: "asc" },
     }),
     prisma.bid.findMany({ where: { projects: { none: { orgId } } }, select: { id: true } }),
@@ -101,11 +102,11 @@ export default async function DashboardPage({
     // Bids we've placed that are still waiting on an award decision.
     prisma.project.count({ where: { orgId, status: "BIDDING" } }),
     prisma.emailRecord.findMany({
-      where: { orgId, meetingAt: { gte: now, lte: weekOut } },
+      where: { AND: [emailVisibility(ctx), { meetingAt: { gte: now, lte: weekOut } }] },
       orderBy: { meetingAt: "asc" },
       select: { meetingAt: true, meetingTitle: true, subject: true },
     }),
-    prisma.emailRecord.findFirst({ where: { orgId }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+    prisma.emailRecord.findFirst({ where: emailVisibility(ctx), orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
   ]);
 
   const decided = new Set(decisions.map((d) => `${d.sourceType}-${d.sourceId}`));

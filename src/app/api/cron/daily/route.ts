@@ -5,7 +5,7 @@ export const maxDuration = 300;
 
 /**
  * Entry point for Vercel Cron (see vercel.json). Runs once a day: generates
- * today's task plan for every organization with a connected user, and scrapes bids across every
+ * today's task plan for every connected user, and scrapes bids across every
  * supported Miami-Dade-area municipality (see /api/scrape/all).
  *
  * Gmail syncing is NOT triggered from here anymore — that's owned by the
@@ -24,23 +24,23 @@ export async function GET(req: NextRequest) {
   }
 
   const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
-  // One plan per organization (not per user) so teammates don't get duplicates.
-  const orgs = await prisma.organization.findMany({
-    where: { users: { some: { googleConnected: true } } },
+  // Daily plans are personal: one per connected user.
+  const users = await prisma.user.findMany({
+    where: { googleConnected: true, orgId: { not: null } },
     select: { id: true },
   });
 
   const results: Record<string, unknown> = {};
 
-  for (const org of orgs) {
+  for (const user of users) {
     try {
-      const planRes = await fetch(`${baseUrl}/api/tasks/generate?orgId=${org.id}`, {
+      const planRes = await fetch(`${baseUrl}/api/tasks/generate?userId=${user.id}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
       });
-      results[org.id] = { plan: await planRes.json().catch(() => null) };
+      results[user.id] = { plan: await planRes.json().catch(() => null) };
     } catch (err) {
-      results[org.id] = { error: err instanceof Error ? err.message : "Unknown error" };
+      results[user.id] = { error: err instanceof Error ? err.message : "Unknown error" };
     }
   }
 
@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    orgs: results,
+    users: results,
     bids: bidRes ? await bidRes.json().catch(() => null) : null,
   });
 }
