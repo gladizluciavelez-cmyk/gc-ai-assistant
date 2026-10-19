@@ -40,15 +40,19 @@ export const authOptions: NextAuthOptions = {
     async createUser({ user }) {
       await createSoloOrg(user.id, user.name, user.email);
     },
-  },
-  callbacks: {
+
     // IMPORTANT: NextAuth's Prisma adapter only writes tokens to the Account
     // table the very first time an account links. On every later sign-in,
     // Google issues a brand-new refresh_token (because of prompt: "consent"
-    // above), but without this callback that fresh token is silently
-    // discarded and the old, now-expired one stays in the database forever
-    // — which is exactly what caused the recurring invalid_grant errors.
-    // Upserting here makes every sign-in actually replace the stored token.
+    // above), but without this the fresh token is silently discarded and the
+    // old, now-expired one stays in the database forever — which is exactly
+    // what caused the recurring invalid_grant errors. Upserting here makes
+    // every sign-in actually replace the stored token.
+    //
+    // This must be an *event*, not the signIn callback: the signIn callback
+    // runs BEFORE the adapter creates a brand-new user, so user.id is not yet
+    // a real User row and the Account insert violates Account_userId_fkey
+    // (the error every new sign-up hit). Events run after user + account exist.
     async signIn({ user, account }) {
       if (account?.provider === "google") {
         await prisma.account.upsert({
@@ -90,8 +94,9 @@ export const authOptions: NextAuthOptions = {
           })
           .catch(() => {});
       }
-      return true;
     },
+  },
+  callbacks: {
     async session({ session, user }) {
       if (session.user) {
         (session.user as { id?: string }).id = user.id;
