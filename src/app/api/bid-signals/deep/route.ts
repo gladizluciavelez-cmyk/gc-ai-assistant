@@ -63,6 +63,9 @@ function benchmark(prices: Outcome["prices"], token: string) {
   if (!prices || !token) return null;
   const clean = prices.filter((p) => p && typeof p.amount === "number" && p.amount > 0 && typeof p.bidder === "string");
   if (clean.length < 2) return null;
+  // Need at least two different companies, otherwise these are not competing bids
+  // (e.g. two payments to the same contractor).
+  if (new Set(clean.map((p) => p.bidder.toLowerCase().trim())).size < 2) return null;
   const sorted = [...clean].sort((a, b) => a.amount - b.amount);
   const idx = sorted.findIndex((p) => p.bidder.toLowerCase().includes(token));
   if (idx === -1) return null;
