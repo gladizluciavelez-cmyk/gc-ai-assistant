@@ -22,7 +22,8 @@ export const maxDuration = 60;
 
 const PAGE_SIZE = 30;
 
-const GENERIC_NAME_WORDS = new Set(["inc", "llc", "corp", "company", "services", "service", "engineering", "construction", "group", "contractors", "contracting", "the"]);
+// First error from the Claude step, reported in the response so failures are visible.
+let firstClassifierError: string | null = null;
 
 function decode(data: string) {
   return Buffer.from(data.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf-8");
@@ -104,7 +105,10 @@ Only use what is in the email. If unsure, use null or OTHER_BID_RELATED.`;
     const txt = block && block.type === "text" ? block.text : "";
     const json = txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1);
     return JSON.parse(json) as Outcome;
-  } catch {
+  } catch (err) {
+    if (!firstClassifierError) {
+      firstClassifierError = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    }
     return null;
   }
 }
@@ -115,14 +119,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  firstClassifierError = null;
   const org = await prisma.organization.findUnique({ where: { id: ctx.orgId }, select: { name: true } });
   const orgName = org?.name ?? "our company";
-  const orgToken =
-    orgName
-      .toLowerCase()
-      .replace(/[^a-z0-9 ]/g, " ")
-      .split(/\s+/)
-      .find((w) => w.length >= 4 && !GENERIC_NAME_WORDS.has(w)) ?? "";
 
   let gmail: gmail_v1.Gmail;
   try {
@@ -134,9 +133,9 @@ export async function GET(req: NextRequest) {
   const terms = [
     "award", "awarded", '"notice of award"', '"intent to award"', '"non-award"', "tabulation",
     '"lowest bidder"', '"low bidder"', '"notice to proceed"', '"purchase order"', '"pre-qualified"',
-    '"bid results"', '"bid tabulation"',
+    '"bid results"', '"bid tabulation"', '"certificate of insurance"', '"performance bond"',
+    '"change of contractor"',
   ];
-  if (orgToken) terms.push(orgToken);
   const q = `newer_than:1y -category:promotions -category:social (${terms.join(" OR ")})`;
 
   const pageToken = req.nextUrl.searchParams.get("pageToken") ?? undefined;
@@ -189,6 +188,7 @@ export async function GET(req: NextRequest) {
     scope: "Your own Gmail, last 12 months, emails matching award/outcome terms or your company name",
     searched: q,
     analyzedThisPage: items.length,
+    classifierError: firstClassifierError,
     notBidRelated: items.length - relevant.length,
     byOutcome,
     weWonCount: relevant.filter((x) => x.weWon === true).length,
