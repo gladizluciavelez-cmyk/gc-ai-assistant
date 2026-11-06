@@ -56,6 +56,25 @@ function attachmentNames(part?: gmail_v1.Schema$MessagePart, out: string[] = [])
 const header = (msg: gmail_v1.Schema$Message, name: string) =>
   msg.payload?.headers?.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? "";
 
+const GENERIC_NAME_WORDS = new Set(["inc", "llc", "corp", "company", "services", "service", "engineering", "construction", "group", "contractors", "contracting", "builders", "the"]);
+
+// How the company's price compares with the others, when the email lists them.
+function benchmark(prices: Outcome["prices"], token: string) {
+  if (!prices || !token) return null;
+  const clean = prices.filter((p) => p && typeof p.amount === "number" && p.amount > 0 && typeof p.bidder === "string");
+  if (clean.length < 2) return null;
+  const sorted = [...clean].sort((a, b) => a.amount - b.amount);
+  const idx = sorted.findIndex((p) => p.bidder.toLowerCase().includes(token));
+  if (idx === -1) return null;
+  const ours = sorted[idx].amount;
+  if (idx === 0) {
+    const next = sorted[1].amount;
+    return { position: "lowest", ours, nextLowest: next, gap: Math.round((next - ours) * 100) / 100, gapPct: Math.round(((next - ours) / ours) * 10000) / 100, bidders: sorted.length };
+  }
+  const low = sorted[0];
+  return { position: idx + 1, ours, lowestBidder: low.bidder, lowest: low.amount, over: Math.round((ours - low.amount) * 100) / 100, overPct: Math.round(((ours - low.amount) / low.amount) * 10000) / 100, bidders: sorted.length };
+}
+
 type Outcome = {
   outcomeType: string;
   project: string | null;
@@ -63,7 +82,7 @@ type Outcome = {
   winner: string | null;
   weWon: boolean | null;
   pricesInBody: boolean;
-  prices: string | null;
+  prices: Array<{ bidder: string; amount: number }> | null;
   pricesLikelyInAttachment: boolean;
   evidence: string | null;
 };
@@ -84,7 +103,7 @@ Decide whether the email tells the outcome or status of a bid, quote or RFQ. Ret
  "winner": winning company name if stated, or null,
  "weWon": true / false / null if unclear,
  "pricesInBody": true only if bid amounts appear in the email text,
- "prices": a short string listing bidder names with amounts if present, else null,
+ "prices": a JSON array of {"bidder": company name, "amount": number in dollars} for every bidder price listed in the email text, else null,
  "pricesLikelyInAttachment": true if an attachment is named like a tabulation, results or award, or the text refers to an attached tabulation,
  "evidence": under 20 words, paraphrased, why you chose this
 }
@@ -92,7 +111,7 @@ Only use what is in the email. If unsure, use null or OTHER_BID_RELATED.`;
   try {
     const res = await anthropic.messages.create({
       model: CLAUDE_MODEL,
-      max_tokens: 500,
+      max_tokens: 900,
       system,
       messages: [
         {
@@ -122,6 +141,12 @@ export async function GET(req: NextRequest) {
   firstClassifierError = null;
   const org = await prisma.organization.findUnique({ where: { id: ctx.orgId }, select: { name: true } });
   const orgName = org?.name ?? "our company";
+  const orgToken =
+    orgName
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g, " ")
+      .split(/\s+/)
+      .find((w) => w.length >= 4 && !GENERIC_NAME_WORDS.has(w)) ?? "";
 
   let gmail: gmail_v1.Gmail;
   try {
@@ -134,7 +159,7 @@ export async function GET(req: NextRequest) {
     "award", "awarded", '"notice of award"', '"intent to award"', '"non-award"', "tabulation",
     '"lowest bidder"', '"low bidder"', '"notice to proceed"', '"purchase order"', '"pre-qualified"',
     '"bid results"', '"bid tabulation"', '"certificate of insurance"', '"performance bond"',
-    '"change of contractor"',
+    '"change of contractor"', "selected", '"as read"', "bidder", "RPQ", "ITQ", "EVN", '"bid opening"',
   ];
   const q = `newer_than:1y -category:promotions -category:social (${terms.join(" OR ")})`;
 
@@ -172,6 +197,7 @@ export async function GET(req: NextRequest) {
         subject: r.meta.subject,
         attachments: r.meta.attachments,
         ...(r.outcome ?? { outcomeType: "UNCLASSIFIED" }),
+        benchmark: benchmark(r.outcome?.prices ?? null, orgToken),
       });
     }
   }
