@@ -122,6 +122,9 @@ Only use what is in the email. If unsure, use null or OTHER_BID_RELATED.`;
     });
     const block = res.content[0];
     const txt = block && block.type === "text" ? block.text : "";
+    if (txt.indexOf("{") === -1) {
+      throw new Error(`No JSON in reply (stop_reason=${res.stop_reason}): ${txt.slice(0, 120)}`);
+    }
     const json = txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1);
     return JSON.parse(json) as Outcome;
   } catch (err) {
@@ -182,7 +185,7 @@ export async function GET(req: NextRequest) {
             attachments: attachmentNames(msg.payload ?? undefined),
             body: extractText(msg.payload ?? undefined),
           };
-          const outcome = await classify(orgName, meta);
+          const outcome = (await classify(orgName, meta)) ?? (await classify(orgName, meta));
           return { meta, outcome };
         } catch {
           return null;
