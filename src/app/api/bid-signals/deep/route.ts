@@ -167,7 +167,12 @@ export async function GET(req: NextRequest) {
     '"bid results"', '"bid tabulation"', '"certificate of insurance"', '"performance bond"',
     '"change of contractor"', "selected", '"as read"', "bidder", "RPQ", "ITQ", "EVN", '"bid opening"',
   ];
-  const q = `newer_than:1y -category:promotions -category:social (${terms.join(" OR ")})`;
+  // ?q=... replaces the default search with your own Gmail search, e.g.
+  // ?q=after:2026/03/15 before:2026/04/20 (RPQ OR award OR bidder)
+  const custom = req.nextUrl.searchParams.get("q");
+  const q = custom
+    ? `${custom} -category:promotions -category:social`
+    : `newer_than:1y -category:promotions -category:social (${terms.join(" OR ")})`;
 
   const pageToken = req.nextUrl.searchParams.get("pageToken") ?? undefined;
   const list = await gmail.users.messages.list({ userId: "me", q, maxResults: PAGE_SIZE, pageToken });
