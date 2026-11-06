@@ -16,7 +16,9 @@ import { prisma } from "@/lib/prisma";
  */
 
 const RESULT_RE =
-  /(notice of (intent to )?award|intent to award|recommend(ation)? (of |for )?award|awarded|not (been )?selected|unsuccessful|regret to inform|bid tabulation|tabulation|bid results?|lowest (responsive|responsible|qualified) bidder|bid opening results?)/i;
+  /(notice of (intent to )?award|intent to award|recommend(ation|ed)? (of |for )?award|award recommendation|bid award|contract award|award of (the )?(contract|bid)|awarded|not (been )?selected|unsuccessful|regret to inform|bid tabulation|tabulation|bid results?|(lowest|low)( (priced?|responsive|responsible|qualified))? bidder|bid opening results?|non-award)/i;
+// Words that should not be used to recognise the user's own company in an email.
+const GENERIC_NAME_WORDS = new Set(["inc", "llc", "corp", "company", "services", "service", "engineering", "construction", "group", "contractors", "contracting", "the"]);
 const SUBMIT_RE =
   /(bid|proposal) (submission|submitted|receipt|received)|submission (receipt|confirmation)|confirmation of (your )?(bid|submission)|(attached|enclosed) (is|are) (our|my|the) (bid|proposal)|please find (our|my|the attached) (bid|proposal)/i;
 const MONEY_RE = /\$\s?\d[\d,]*(\.\d+)?/;
@@ -65,7 +67,18 @@ export async function GET() {
     },
   });
 
+  // The company's own name, so we can spot award emails that name it as the
+  // winner instead of saying "you won".
+  const org = await prisma.organization.findUnique({ where: { id: ctx.orgId }, select: { name: true } });
+  const orgToken =
+    (org?.name ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g, " ")
+      .split(/\s+/)
+      .find((w) => w.length >= 4 && !GENERIC_NAME_WORDS.has(w)) ?? "";
+
   const text = (r: Row) => `${r.subject} ${r.snippet ?? ""} ${r.summary ?? ""}`;
+  const namesUs = (r: Row) => orgToken !== "" && text(r).toLowerCase().includes(orgToken);
   const sentByMe = (r: Row) => myEmail !== "" && r.from.toLowerCase().includes(myEmail);
 
   const byCategory: Record<string, number> = {};
@@ -106,6 +119,17 @@ export async function GET() {
     bidsWithDetectableSubmission: { count: withSubmission, pct: pct(withSubmission, totalBids) },
     bidsWithDetectableResult: { count: withResult, pct: pct(withResult, totalBids) },
     bidsWithPriceInResultEmail: { count: withPrice, pct: pct(withPrice, totalBids) },
+    companyNameUsedForMatching: orgToken || "(none found)",
+    resultEmailsNamingYourCompany: {
+      note: "Result-style emails (award, lowest bidder, tabulation, non-award) that mention your company name, so likely wins or placements",
+      count: resultEmails.filter(namesUs).length,
+      examples: sample(resultEmails.filter(namesUs)),
+    },
+    emailsMentioningYourCompanyFromOthers: {
+      note: "Emails from others that mention your company name (any topic) so you can spot ones that show prices",
+      count: rows.filter((r) => namesUs(r) && !sentByMe(r)).length,
+      examples: sample(rows.filter((r) => namesUs(r) && !sentByMe(r))),
+    },
     resultLikeEmails: { count: resultEmails.length, examples: sample(resultEmails) },
     submissionLikeEmails: { count: submitEmails.length, examples: sample(submitEmails) },
   });
